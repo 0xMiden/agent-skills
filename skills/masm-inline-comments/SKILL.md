@@ -23,6 +23,7 @@ exec.native_account::remove_asset
 ### 2. Don't over-comment obvious operations
 
 Only add comments that provide value. Skip comments for self-explanatory operations.
+Only apply this rule to new code you write. Do not remove comments that are present in the code.
 
 **Skip comments for:**
 - Simple arithmetic: `add`, `sub`, `mul`, `div`
