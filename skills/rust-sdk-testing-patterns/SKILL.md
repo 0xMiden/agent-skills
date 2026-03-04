@@ -1,6 +1,6 @@
 ---
-name: miden-testing-patterns
-description: Guide to testing Miden smart contracts with MockChain. Covers test setup, contract building, account/note creation, transaction execution, storage verification, faucet setup, and output note verification. Use when writing, editing, or debugging Miden integration tests.
+name: rust-sdk-testing-patterns
+description: Guide to testing Miden Rust SDK smart contracts with MockChain. Covers test setup, contract building, account/note creation, transaction execution, storage verification, faucet setup, and output note verification. Use when writing, editing, or debugging Miden Rust SDK integration tests.
 ---
 
 # Miden Testing Patterns (MockChain)

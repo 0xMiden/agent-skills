@@ -7,10 +7,10 @@ Skills for AI agents when working with Miden projects.
 ### Rust SDK (Smart Contract Development)
 
 - **rust-sdk-patterns** – Complete guide to `#[component]`, `#[note]`, `#[tx_script]` macros, storage patterns, native functions, asset handling, and cross-component calls
-- **miden-testing-patterns** – MockChain testing workflow, account/note creation, storage verification, and multi-step test patterns
+- **rust-sdk-testing-patterns** – MockChain testing workflow, account/note creation, storage verification, and multi-step test patterns
 - **miden-concepts** – Miden architecture from a developer perspective: actor model, accounts, notes, transactions, assets, privacy
-- **miden-pitfalls** – Critical safety rules: felt arithmetic, comparison operators, stack limits, argument limits, storage naming, no-std
-- **miden-source-guide** – Advanced development guide: AI practices (Plan Mode, verification-driven development, sub-agents, context engineering) and Miden source repository map for discovering patterns beyond basic skills
+- **rust-sdk-pitfalls** – Critical safety rules: felt arithmetic, comparison operators, stack limits, argument limits, storage naming, no-std
+- **rust-sdk-source-guide** – Advanced development guide: AI practices (Plan Mode, verification-driven development, sub-agents, context engineering) and Miden source repository map for discovering patterns beyond basic skills
 
 ### React Frontend Development
 

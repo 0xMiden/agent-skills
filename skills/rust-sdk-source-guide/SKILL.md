@@ -1,6 +1,6 @@
 ---
-name: miden-source-guide
-description: Guide for advanced Miden smart contract development using source repo exploration. Covers AI development practices (Plan Mode, verification-driven development, context engineering, sub-agents) and maps Miden source repositories for discovering advanced patterns. Use when building complex multi-contract applications, novel note flows, or anything beyond basic SDK patterns.
+name: rust-sdk-source-guide
+description: Guide for advanced Miden Rust SDK smart contract development using source repo exploration. Covers AI development practices (Plan Mode, verification-driven development, context engineering, sub-agents) and maps Miden source repositories for discovering advanced patterns. Use when building complex Rust SDK multi-contract applications, novel note flows, or anything beyond basic Rust SDK patterns.
 ---
 
 # Advanced Miden Development: Source-Guided Context Engineering

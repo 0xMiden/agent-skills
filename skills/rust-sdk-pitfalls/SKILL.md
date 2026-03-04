@@ -1,6 +1,6 @@
 ---
-name: miden-pitfalls
-description: Critical pitfalls and safety rules for Miden Rust SDK development. Covers felt arithmetic security, comparison operators, stack limits, argument limits, array ordering, storage naming, no-std setup, asset layout, and P2ID roots. Use when reviewing, debugging, or writing Miden contract code.
+name: rust-sdk-pitfalls
+description: Critical pitfalls and safety rules for Miden Rust SDK development. Covers felt arithmetic security, comparison operators, stack limits, argument limits, array ordering, storage naming, no-std setup, asset layout, and P2ID roots. Use when reviewing, debugging, or writing Miden Rust SDK contract code.
 ---
 
 # Miden SDK Pitfalls
