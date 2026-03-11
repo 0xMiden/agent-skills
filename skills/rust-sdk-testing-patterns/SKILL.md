@@ -1,6 +1,6 @@
 ---
 name: rust-sdk-testing-patterns
-description: Guide to testing Miden Rust SDK smart contracts with MockChain. Covers test setup, contract building, account/note creation, transaction execution, storage verification, faucet setup, and output note verification. Use when writing, editing, or debugging Miden Rust SDK integration tests.
+description: Guide to testing Miden smart contracts with MockChain. Covers test setup, contract building, account/note creation, transaction execution, storage verification, faucet setup, and output note verification. Use when writing, editing, or debugging Miden integration tests.
 ---
 
 # Miden Testing Patterns (MockChain)
@@ -9,44 +9,17 @@ description: Guide to testing Miden Rust SDK smart contracts with MockChain. Cov
 
 Tests go in `integration/tests/`. All tests are async and use MockChain for local execution without a network.
 
-```rust
-use integration::helpers::{
-    build_project_in_dir, create_testing_account_from_package, create_testing_note_from_package,
-    AccountCreationConfig, NoteCreationConfig,
-};
-use miden_client::{
-    account::{StorageMap, StorageSlot, StorageSlotName},
-    transaction::OutputNote,
-    Felt, Word,
-};
-use miden_testing::{Auth, MockChain};
-use std::{path::Path, sync::Arc};
-
-#[tokio::test]
-async fn my_test() -> anyhow::Result<()> {
-    // ... test body ...
-    Ok(())
-}
-```
+See [counter_test.rs](../../../integration/tests/counter_test.rs) for a complete working test covering imports, MockChain setup, contract building, account creation with storage, note creation, transaction execution, and storage verification.
 
 ## Step-by-Step Test Pattern
 
 ### 1. Initialize MockChain Builder
-```rust
-let mut builder = MockChain::builder();
-```
+
+See [counter_test.rs](../../../integration/tests/counter_test.rs) line 17 for the pattern: `let mut builder = MockChain::builder();`
 
 ### 2. Create Sender/Wallet Accounts
-```rust
-// Simple wallet (no assets)
-let sender = builder.add_existing_wallet(Auth::BasicAuth)?;
 
-// Wallet with assets
-let sender = builder.add_existing_wallet_with_assets(
-    Auth::BasicAuth,
-    [FungibleAsset::new(faucet.id(), 100)?.into()],
-)?;
-```
+See [counter_test.rs](../../../integration/tests/counter_test.rs) line 20 for the basic wallet pattern. For wallets with pre-funded assets, use `builder.add_existing_wallet_with_assets(Auth::BasicAuth, [FungibleAsset::new(faucet.id(), 100)?.into()])`.
 
 ### 3. Set Up Faucets (for fungible assets)
 ```rust
@@ -59,16 +32,8 @@ let faucet = builder.add_existing_basic_faucet(
 ```
 
 ### 4. Build Contracts
-```rust
-let contract_package = Arc::new(build_project_in_dir(
-    Path::new("../contracts/my-account"),
-    true, // release mode
-)?);
-let note_package = Arc::new(build_project_in_dir(
-    Path::new("../contracts/my-note"),
-    true,
-)?);
-```
+
+See [counter_test.rs](../../../integration/tests/counter_test.rs) lines 23-30 for the pattern using `build_project_in_dir`.
 
 ### 5. Create Account with Storage
 
@@ -78,48 +43,28 @@ miden::component::[snake_case(package.metadata.component.package)]::[field_name]
 ```
 
 Examples:
-- Package `miden:counter-account`, field `count_map` → `miden::component::miden_counter_account::count_map`
-- Package `miden:bank-account`, field `balances` → `miden::component::miden_bank_account::balances`
+- Package `miden:counter-account`, field `count_map` -> `miden::component::miden_counter_account::count_map`
+- Package `miden:bank-account`, field `balances` -> `miden::component::miden_bank_account::balances`
 
 Rule: Replace colons and hyphens with underscores in the package name.
 
+See [counter_test.rs](../../../integration/tests/counter_test.rs) lines 33-51 for a complete StorageMap example with `StorageSlotName`, `StorageSlot::with_map`, `AccountCreationConfig`, and `create_testing_account_from_package`.
+
+For a Value slot (single Word) instead of a StorageMap:
 ```rust
-// Define storage slots
-let slot_name = StorageSlotName::new("miden::component::miden_counter_account::count_map").unwrap();
-
-// StorageMap slot (key-value mapping)
-let key = Word::from([Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(1)]);
-let initial_value = Word::from([Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(0)]);
-let storage_slots = vec![StorageSlot::with_map(
-    slot_name.clone(),
-    StorageMap::with_entries([(key, initial_value)]).unwrap(),
-)];
-
-// Value slot (single Word)
 let value_slot_name = StorageSlotName::new("miden::component::miden_bank_account::initialized").unwrap();
 let storage_slots = vec![StorageSlot::with_value(
     value_slot_name.clone(),
     Word::default(),
 )];
-
-// Create account with storage
-let cfg = AccountCreationConfig {
-    storage_slots,
-    ..Default::default()
-};
-let mut account = create_testing_account_from_package(contract_package.clone(), cfg).await?;
 ```
 
 ### 6. Create Notes
-```rust
-// Simple note (no assets, no inputs)
-let note = create_testing_note_from_package(
-    note_package.clone(),
-    sender.id(),
-    NoteCreationConfig::default(),
-)?;
 
-// Note with assets and inputs
+See [counter_test.rs](../../../integration/tests/counter_test.rs) lines 54-58 for basic note creation with `create_testing_note_from_package`.
+
+For notes with assets and inputs:
+```rust
 use miden_client::note::NoteAssets;
 use miden_standards::notes::FungibleAsset;
 
@@ -129,34 +74,19 @@ let note = create_testing_note_from_package(
     sender.id(),
     NoteCreationConfig {
         assets: note_assets,
-        inputs: vec![Felt::new(42), Felt::new(0)],  // custom note inputs
+        inputs: vec![Felt::new(42), Felt::new(0)],
         ..Default::default()
     },
 )?;
 ```
 
 ### 7. Add to MockChain and Build
-```rust
-builder.add_account(account.clone())?;
-builder.add_output_note(OutputNote::Full(note.clone()));
-let mut mock_chain = builder.build()?;
-```
+
+See [counter_test.rs](../../../integration/tests/counter_test.rs) lines 61-65 for adding accounts, notes, and building the mock chain.
 
 ### 8. Execute Transaction
-```rust
-let tx_context = mock_chain
-    .build_tx_context(account.id(), &[note.id()], &[])?
-    .build()?;
 
-let executed_transaction = tx_context.execute().await?;
-
-// Apply state changes
-account.apply_delta(executed_transaction.account_delta())?;
-
-// Add to chain and prove
-mock_chain.add_pending_executed_transaction(&executed_transaction)?;
-mock_chain.prove_next_block()?;
-```
+See [counter_test.rs](../../../integration/tests/counter_test.rs) lines 67-79 for the full execution flow: `build_tx_context` -> `execute()` -> `apply_delta()` -> `add_pending_executed_transaction()` -> `prove_next_block()`.
 
 ### 9. Execute with Transaction Script
 ```rust
@@ -175,18 +105,14 @@ let tx_context = mock_chain
     .build()?;
 
 let executed = tx_context.execute().await?;
-account.apply_delta(&executed.account_delta())?;
+account.apply_delta(executed.account_delta())?;
 mock_chain.add_pending_executed_transaction(&executed)?;
 mock_chain.prove_next_block()?;
 ```
 
 ### 10. Verify Storage State
-```rust
-// Read StorageMap value
-let value = account.storage()
-    .get_map_item(&slot_name, key)?;
-assert_eq!(value, Word::from([Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(1)]));
-```
+
+See [counter_test.rs](../../../integration/tests/counter_test.rs) lines 82-92 for reading a StorageMap value and asserting on the result.
 
 ### 11. Verify Output Notes
 ```rust
@@ -220,7 +146,7 @@ async fn multi_step_test() -> anyhow::Result<()> {
         .tx_script(init_script)
         .build()?;
     let executed_init = init_tx_context.execute().await?;
-    account.apply_delta(&executed_init.account_delta())?;
+    account.apply_delta(executed_init.account_delta())?;
     mock_chain.add_pending_executed_transaction(&executed_init)?;
     mock_chain.prove_next_block()?;
 
@@ -229,7 +155,7 @@ async fn multi_step_test() -> anyhow::Result<()> {
         .build_tx_context(account.id(), &[note.id()], &[])?
         .build()?;
     let executed = tx_context.execute().await?;
-    account.apply_delta(&executed.account_delta())?;
+    account.apply_delta(executed.account_delta())?;
     mock_chain.add_pending_executed_transaction(&executed)?;
     mock_chain.prove_next_block()?;
 
@@ -240,18 +166,9 @@ async fn multi_step_test() -> anyhow::Result<()> {
 }
 ```
 
-## Key Dependencies (integration/Cargo.toml)
+## Key Dependencies
 
-```toml
-[dependencies]
-cargo-miden = { git = "https://github.com/0xMiden/compiler", branch = "next" }
-miden-client = { version = "0.13", features = ["tonic", "testing"] }
-miden-standards = { version = "0.13", default-features = false, features = ["testing"] }
-miden-testing = "0.13"
-miden-core = { version = "0.20" }
-tokio = { version = "1.40", features = ["rt-multi-thread", "net", "macros", "fs"] }
-anyhow = "1.0"
-```
+See [integration/Cargo.toml](../../../integration/Cargo.toml) for the current dependency versions used in this project.
 
 ## Validation Checklist
 

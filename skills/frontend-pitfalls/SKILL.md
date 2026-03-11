@@ -72,6 +72,8 @@ server: {
 
 **Gotcha**: These headers break third-party iframes, external scripts without CORS, and OAuth popups. Use `credentialless` for COEP if cross-origin resources are needed.
 
+**Note**: `midenVitePlugin()` from `@miden-sdk/vite-plugin` handles COOP/COEP automatically via its `crossOriginIsolation` option (defaults to `false` to avoid breaking OAuth popups). Enable it instead of setting headers manually.
+
 ## FP4: BigInt Type Mismatch (HIGH)
 
 All token amounts in the SDK are `bigint`. Passing `number` causes TypeScript errors or runtime failures.
@@ -119,11 +121,11 @@ Default `autoSyncInterval` is 15000ms (15 seconds). Each sync triggers re-render
   <SendForm />  {/* re-renders on every sync */}
 </MidenProvider>
 
-// SOLUTION 1 — disable auto-sync for manual control
-<MidenProvider config={{ rpcUrl: "devnet", autoSyncInterval: 0 }}>
-
-// SOLUTION 2 — use stable keys and memoization
+// SOLUTION 1 — preferred: use stable keys and memoization
 const MemoizedForm = React.memo(SendForm);
+
+// SOLUTION 2 — disable auto-sync for manual control
+<MidenProvider config={{ rpcUrl: "devnet", autoSyncInterval: 0 }}>
 ```
 
 ## FP7: IndexedDB State Loss (MEDIUM)
@@ -136,26 +138,27 @@ The client persists accounts, keys, and notes in IndexedDB. Browser "Clear site 
 
 ## FP8: Vite Configuration Requirements (MEDIUM)
 
-Missing any of these causes build failures or silent runtime crashes.
+The `@miden-sdk/vite-plugin` package handles all Miden-specific Vite config.
+The minimal setup is:
 
 ```ts
-// ALL of these are required in vite.config.ts:
-plugins: [react(), wasm(), topLevelAwait()],
-resolve: { alias: { dexie: path.resolve(__dirname, "node_modules/dexie") } },
-optimizeDeps: {
-  exclude: ["@miden-sdk/miden-sdk"],  // don't pre-bundle WASM
-  include: ["dexie"],                  // do pre-bundle dexie
-},
-server: { headers: { /* COOP/COEP — see FP3 */ } },
+import { midenVitePlugin } from "@miden-sdk/vite-plugin";
+
+export default defineConfig({
+  plugins: [react(), midenVitePlugin()],
+});
 ```
 
-| Missing Config | Symptom |
-|----------------|---------|
-| `vite-plugin-wasm` | WASM module not found |
-| `vite-plugin-top-level-await` | "Top-level await is not available" |
-| dexie alias | "dexie is not a constructor" |
-| optimizeDeps.exclude | Corrupted WASM binary |
-| COOP/COEP headers | SharedArrayBuffer not defined |
+`midenVitePlugin()` handles: WASM loading, top-level await, WASM pre-bundling exclusion,
+and optionally COOP/COEP headers (via the `crossOriginIsolation` option, defaults to `false`
+to avoid breaking OAuth popups).
+
+| Option | Default | Purpose |
+|--------|---------|---------|
+| `crossOriginIsolation` | `false` | Add COOP/COEP headers for SharedArrayBuffer |
+
+Enable `crossOriginIsolation: true` only if your app doesn't use OAuth or cross-origin iframes.
+For production COOP/COEP, set headers at the server level (see vite-wasm-setup skill).
 
 ## FP9: React StrictMode Double-Init (LOW)
 
@@ -182,5 +185,5 @@ useEffect(() => {
 | FP5 | Bech32 mismatch | HIGH | Match network in rpcUrl and addresses |
 | FP6 | Auto-sync | MEDIUM | Set autoSyncInterval: 0 if UI stability matters |
 | FP7 | IndexedDB loss | MEDIUM | Warn users; use external signers for production |
-| FP8 | Vite config | MEDIUM | wasm + top-level-await plugins, dexie alias |
+| FP8 | Vite config | MEDIUM | Use `midenVitePlugin()` — it handles all Miden Vite config |
 | FP9 | StrictMode | LOW | Use MidenProvider, not manual client creation |

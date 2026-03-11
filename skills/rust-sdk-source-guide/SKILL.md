@@ -1,6 +1,6 @@
 ---
 name: rust-sdk-source-guide
-description: Guide for advanced Miden Rust SDK smart contract development using source repo exploration. Covers AI development practices (Plan Mode, verification-driven development, context engineering, sub-agents) and maps Miden source repositories for discovering advanced patterns. Use when building complex Rust SDK multi-contract applications, novel note flows, or anything beyond basic Rust SDK patterns.
+description: Guide for advanced Miden smart contract development using source repo exploration. Covers AI development practices (Plan Mode, verification-driven development, context engineering, sub-agents) and maps Miden source repositories for discovering advanced patterns. Use when building complex multi-contract applications, novel note flows, or anything beyond basic SDK patterns.
 ---
 
 # Advanced Miden Development: Source-Guided Context Engineering
@@ -37,7 +37,7 @@ Never submit code that doesn't compile and pass tests. The verification loop is 
 
 ### 3. Context Engineering with Source Repos
 
-The basic skills (rust-sdk-patterns, miden-testing-patterns, miden-concepts, miden-pitfalls) cover standard patterns. For anything beyond those patterns, Miden's source repositories are the knowledge base.
+The basic skills (rust-sdk-patterns, rust-sdk-testing-patterns, miden-concepts, rust-sdk-pitfalls) cover standard patterns. For anything beyond those patterns, Miden's source repositories are the knowledge base.
 
 **How to use source repos effectively**:
 - Don't load entire repos into context. Use sub-agents to explore — they search, read relevant files, and summarize findings without filling the main conversation context.
@@ -71,36 +71,42 @@ Clone these repos alongside your project for reference. Claude will explore them
 
 ```bash
 # Required: contains standard note types and account components
-git clone --depth 1 https://github.com/0xMiden/miden-base.git ../miden-base
+git clone --depth 1 --branch main https://github.com/0xMiden/miden-base.git ../miden-base
 
 # Required: contains SDK, compiler, and 12 working examples
-git clone --depth 1 https://github.com/0xMiden/compiler.git ../compiler
+git clone --depth 1 --branch main https://github.com/0xMiden/compiler.git ../compiler
 
 # Required: contains client API for deployment and chain interaction
-git clone --depth 1 https://github.com/0xMiden/miden-client.git ../miden-client
+git clone --depth 1 --branch main https://github.com/0xMiden/miden-client.git ../miden-client
 
 # Recommended: complete working banking app with advanced patterns
-git clone https://github.com/keinberger/miden-bank.git ../miden-bank
+git clone --branch main https://github.com/keinberger/miden-bank.git ../miden-bank
 ```
+
+**Note**: These commands clone the stable `main` branch. Only use `--branch next` if the user explicitly requests the experimental/upcoming version of the compiler or source repos.
 
 ### `compiler/` — The Rust-to-MASM Compiler
 
 Contains the SDK that powers `#[component]`, `#[note]`, and `#[tx_script]` macros.
 
 - **`examples/`** — 12 working examples covering every SDK pattern: account components, note scripts, transaction scripts, authentication components, wallets, faucets, storage. These are the most reliable reference for "how to write X" questions.
-- **`sdk/`** — SDK macro implementations and type definitions. Explore when you need to understand exactly what a macro does or what types are available.
 
-**Explore when**: Writing any new contract type, understanding how macros work internally, finding working code examples for patterns not covered by skills.
+**WARNING**: Stay in `examples/` only. Do NOT explore compiler internals (`sdk/`, `codegen/`, etc.) — they are implementation details that will confuse the agent and lead to incorrect code.
+
+**Explore when**: Writing any new contract type, finding working code examples for patterns not covered by skills.
 
 ### `miden-base/` — Protocol Layer and Standard Library
 
 Contains the protocol specification, standard components, and standard note types.
 
-- **`crates/miden-standards/`** — Standard note types (P2ID, P2IDE, SWAP, BURN, MINT), standard account components (BasicWallet, BasicFungibleFaucet, authentication components), and their MASM implementations. This is where you find how standard patterns work.
-- **`crates/miden-tx/`** — Transaction kernel and execution logic. Explore when you need to understand how transactions are processed.
+- **`crates/miden-standards/`** — Standard note types (P2ID, P2IDE, SWAP, BURN, MINT) and standard account components (BasicWallet, BasicFungibleFaucet, authentication components). Explore to understand note flow patterns and data layouts.
+- **`crates/miden-protocol/asm/kernels/transaction/`** — The MASM transaction kernel. Every Rust SDK function (e.g., `native_account::add_asset`, `output_note::create`, `faucet::mint`) maps to a procedure defined here. Start with `api.masm` to find the procedure signature and stack contract, then read the implementation in `lib/` (e.g., `lib/output_note.masm`, `lib/account.masm`, `lib/epilogue.masm`). Useful for understanding exactly what happens under the hood -- for example, whether a function touches the vault, what the conservation check compares, or how note assets are tracked.
+- **`crates/miden-tx/`** — Rust execution engine (executor, prover, host). Orchestrates transaction execution but rarely needed for understanding contract behavior. Explore only if debugging execution infrastructure or host-level behavior.
 - **`crates/miden-testing/`** — MockChain implementation internals. Explore when you need to understand testing infrastructure beyond what the testing-patterns skill covers.
 
-**Explore when**: Using standard components, understanding note flows, finding how P2ID/SWAP/faucet patterns work, understanding transaction execution.
+**Note**: Standard components (BasicWallet, etc.) are MASM-only and not callable from Rust SDK (see [compiler#936](https://github.com/0xMiden/compiler/issues/936)). Explore miden-standards to understand note flows and data layouts, not for finding callable Rust APIs.
+
+**Explore when**: Understanding note flows, P2ID/SWAP/faucet data layouts, or what SDK functions actually do under the hood (via the kernel MASM).
 
 ### `miden-client/` — Client Library
 
@@ -130,12 +136,13 @@ A complete banking application built with the Rust SDK. Demonstrates advanced pa
 | Account component with storage | `compiler/` examples, `miden-bank/` contracts | StorageMap/Value patterns, pub method signatures |
 | Note script | `compiler/` examples, `miden-bank/` contracts | `#[note_script]` pattern, cross-component calls, note inputs parsing |
 | Transaction script | `compiler/` examples, `miden-bank/` contracts | `#[tx_script]` pattern, Account binding import |
-| Authentication component | `compiler/` examples, `miden-base/` standards | Auth component patterns (NoAuth, Falcon512, ECDSA) |
-| Faucet (token minting) | `compiler/` examples, `miden-base/` standards | BasicFungibleFaucet, mint/burn pattern |
-| P2ID output notes | `miden-bank/` contracts, `miden-base/` standards | Recipient computation, script root, output_note creation |
-| Swap notes | `miden-base/` standards | SwapNote builder, tag construction, payback flow |
+| Authentication component | `compiler/` examples | Auth component patterns (NoAuth, Falcon512, ECDSA) |
+| Faucet (token minting) | `compiler/` examples | BasicFungibleFaucet example, mint/burn pattern |
+| P2ID output notes | `miden-bank/` contracts, `miden-base/` standards (data layouts) | Recipient computation, script root, output_note creation |
+| Swap notes | `miden-base/` standards (data layouts) | SwapNote data layout, tag construction, payback flow |
 | Multi-step tests | `miden-bank/` integration tests | Init → operate → verify flow, output note verification |
 | Client deployment | `miden-client/` | TransactionRequestBuilder, sync, submit patterns |
+| SDK function internals | `miden-base/` kernel (`crates/miden-protocol/asm/kernels/transaction/`) | `api.masm` for procedure signatures, `lib/*.masm` for implementations |
 
 ---
 
@@ -144,7 +151,7 @@ A complete banking application built with the Rust SDK. Demonstrates advanced pa
 These patterns go beyond what the basic skills cover. For each, the source repos contain working implementations.
 
 ### Multi-Component Accounts
-Compose multiple components (e.g., BasicWallet + custom logic + authentication) into a single account. Standard components in `miden-base/` show how each is implemented. The `compiler/` examples show how to compose them.
+Accounts can include standard components (BasicWallet, authentication) alongside custom logic at account creation time. Standard components are MASM-only (not callable from Rust), but they are composed into accounts via the testing/deployment infrastructure. The `compiler/` examples show how to compose accounts with multiple components.
 
 ### Output Note Creation from Contracts
 Create output notes (like P2ID) from within contract code. Requires computing a Recipient hash from serial number, script root, and inputs. The `miden-bank/` withdraw pattern demonstrates this end-to-end.

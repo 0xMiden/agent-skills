@@ -67,7 +67,7 @@ A transaction is a **single-account state transition** with 4 phases:
 - **Felt**: Field element in the Goldilocks prime field (p = 2^64 - 2^32 + 1). The fundamental data unit.
 - **Word**: Array of 4 Felts (32 bytes). Used for cryptographic hashes, storage keys, account IDs.
 
-**WARNING**: Felt arithmetic is **modular**. Subtraction wraps around the prime. Always validate with `.as_u64()` before subtracting. See the miden-pitfalls skill for details.
+**WARNING**: Felt arithmetic is **modular**. Subtraction wraps around the prime. Always validate with `.as_u64()` before subtracting. See the rust-sdk-pitfalls skill for details.
 
 ## Standard Note Patterns
 
@@ -76,15 +76,6 @@ A transaction is a **single-account state transition** with 4 phases:
 | **P2ID** | Send assets to a specific account | Note script checks consumer's ID matches target |
 | **P2IDE** | P2ID with expiration | Adds block-height timelock; sender can reclaim after expiry |
 | **SWAP** | Atomic asset exchange | Note offers asset A, requests asset B; consumer provides B |
-
-## Standard Components (miden-standards)
-
-| Component | Purpose |
-|-----------|---------|
-| `BasicWallet` | Standard wallet: `receive_asset()`, `move_asset_to_note()` |
-| `BasicFungibleFaucet` | Mint/burn fungible tokens |
-| `NoAuth` | No authentication (for testing) |
-| `AuthFalcon512Rpo` | Production signature authentication |
 
 ## Development Model
 

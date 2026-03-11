@@ -18,6 +18,8 @@ Skills for AI agents when working with Miden projects.
 - **frontend-pitfalls** – Critical frontend pitfalls: WASM init race, recursive access crash, COOP/COEP headers, BigInt handling, Bech32 mismatch, IndexedDB state loss
 - **vite-wasm-setup** – Vite + WASM configuration: required plugins, deployment headers (Nginx, Vercel, Cloudflare), TypeScript config, troubleshooting
 - **frontend-source-guide** – Advanced frontend development guide: AI practices and miden-client source repository map for discovering patterns beyond basic skills
+- **signer-integration** – Integrating external signers (Para, Turnkey, MidenFi wallet adapter) and building custom signers for Miden React frontends
+- **testing-patterns** – Testing conventions: Vitest + testing-library setup, `@miden-sdk/react` module mocking, fixtures, TDD workflow for Miden React components
 
 ### Miden Assembly
 

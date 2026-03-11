@@ -10,104 +10,16 @@ description: Complete guide to writing Miden smart contracts with the Rust SDK. 
 ### Account Component (`#[component]`)
 Defines reusable logic and storage for accounts. Accounts are composed of one or more components.
 
-```rust
-#![no_std]
-#![feature(alloc_error_handler)]
-use miden::{component, felt, Felt, StorageMap, StorageMapAccess, Value, Word};
+See [counter-account/src/lib.rs](../../../contracts/counter-account/src/lib.rs) for a working example demonstrating `#[component]`, `StorageMap`, read/write methods, and felt arithmetic.
 
-#[component]
-struct MyComponent {
-    #[storage(description = "a simple flag")]
-    flag: Value,
-
-    #[storage(description = "balance mapping")]
-    balances: StorageMap,
-}
-
-#[component]
-impl MyComponent {
-    // Read-only method
-    pub fn get_flag(&self) -> Word {
-        self.flag.read()
-    }
-
-    // Mutating method
-    pub fn set_flag(&mut self, val: Word) {
-        self.flag.write(val);
-    }
-
-    // StorageMap access
-    pub fn get_balance(&self, key: Word) -> Felt {
-        self.balances.get(&key)
-    }
-
-    pub fn set_balance(&mut self, key: Word, val: Felt) {
-        self.balances.set(key, val);
-    }
-}
-```
-
-**Cargo.toml for accounts:**
-```toml
-[lib]
-crate-type = ["cdylib"]
-
-[dependencies]
-miden = { version = "0.9" }
-
-[package.metadata.component]
-package = "miden:my-component"
-
-[package.metadata.miden]
-project-kind = "account"
-supported-types = ["RegularAccountImmutableCode"]
-```
+**Cargo.toml for accounts:** See [counter-account/Cargo.toml](../../../contracts/counter-account/Cargo.toml) for the required `crate-type`, `miden` dependency, `component` metadata, and `project-kind`.
 
 ### Note Script (`#[note]`)
 Executes when a note is consumed by an account. Can call component methods on the consuming account.
 
-```rust
-#![no_std]
-#![feature(alloc_error_handler)]
-use miden::*;
-use crate::bindings::miden::my_component::my_component;
+See [increment-note/src/lib.rs](../../../contracts/increment-note/src/lib.rs) for a working example demonstrating `#[note]`, `#[note_script]`, and cross-component calls.
 
-#[note]
-struct MyNote;
-
-#[note]
-impl MyNote {
-    #[note_script]
-    fn run(self, _arg: Word) {
-        let sender = active_note::get_sender();
-        let assets = active_note::get_assets();
-        for asset in assets {
-            my_component::deposit(sender, asset);
-        }
-    }
-}
-```
-
-**Cargo.toml for notes:**
-```toml
-[lib]
-crate-type = ["cdylib"]
-
-[dependencies]
-miden = { version = "0.9" }
-
-[package.metadata.component]
-package = "miden:my-note"
-
-[package.metadata.miden.dependencies]
-"miden:my-component" = { path = "../my-component" }
-
-[package.metadata.component.target.dependencies]
-"miden:my-component" = { path = "../my-component/target/generated-wit/" }
-
-[package.metadata.miden]
-project-kind = "note-script"
-```
+**Cargo.toml for notes:** See [increment-note/Cargo.toml](../../../contracts/increment-note/Cargo.toml) for the required `miden` deps, cross-component dependencies, wit deps, and `project-kind = "note-script"`.
 
 ### Transaction Script (`#[tx_script]`)
 One-off logic executed in the context of an account. Used for initialization, admin operations, etc.
@@ -196,22 +108,9 @@ let serial_num = Word::from([inputs[4], inputs[5], inputs[6], inputs[7]]);
 
 ## Cross-Component Dependencies
 
-To call another component's methods from a note or tx script:
+To call another component's methods from a note or tx script, two Cargo.toml sections are needed. See [increment-note/Cargo.toml](../../../contracts/increment-note/Cargo.toml) for a working example showing both `[package.metadata.miden.dependencies]` and `[package.metadata.component.target.dependencies]`.
 
-1. Add to note's Cargo.toml:
-```toml
-[package.metadata.miden.dependencies]
-"miden:target-component" = { path = "../target-component" }
-
-[package.metadata.component.target.dependencies]
-"miden:target-component" = { path = "../target-component/target/generated-wit/" }
-```
-
-2. Import the bindings:
-```rust
-use crate::bindings::miden::target_component::target_component;
-// Call: target_component::method_name(args);
-```
+Then import the bindings in your Rust code. See [increment-note/src/lib.rs](../../../contracts/increment-note/src/lib.rs) line 13 for the import pattern: `use crate::bindings::miden::target_component::target_component;`
 
 ## Common Type Conversions
 
@@ -233,11 +132,7 @@ let n: u64 = f.as_u64();
 
 ## No-std Requirements
 
-Every contract file must include:
-```rust
-#![no_std]
-#![feature(alloc_error_handler)]
-```
+Every contract file must start with `#![no_std]` and `#![feature(alloc_error_handler)]`. See any contract in [contracts/](../../../contracts/) for the pattern.
 
 If you need heap allocation (Vec, String, etc.):
 ```rust
@@ -251,5 +146,5 @@ use alloc::vec::Vec;
 - [ ] `crate-type = ["cdylib"]` in Cargo.toml
 - [ ] Correct `project-kind` in `[package.metadata.miden]`
 - [ ] Cross-component deps in both `[package.metadata.miden.dependencies]` and `[package.metadata.component.target.dependencies]`
-- [ ] Felt arithmetic validated before subtraction (see miden-pitfalls skill)
-- [ ] Felt comparisons use `.as_u64()` (see miden-pitfalls skill)
+- [ ] Felt arithmetic validated before subtraction (see rust-sdk-pitfalls skill)
+- [ ] Felt comparisons use `.as_u64()` (see rust-sdk-pitfalls skill)

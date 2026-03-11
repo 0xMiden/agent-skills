@@ -36,36 +36,36 @@ import { MidenProvider } from "@miden-sdk/react";
 
 ## Query Hooks
 
-All return `{ data, isLoading, error, refetch }`.
+Each returns its own result shape plus `isLoading`, `error`, `refetch`.
 
 ### useAccounts()
 ```tsx
-const { data: accounts } = useAccounts();
-// accounts.wallets — regular wallet accounts
-// accounts.faucets — token faucet accounts
-// accounts.all — everything (AccountHeader[])
+const { accounts, wallets, faucets, isLoading, error, refetch } = useAccounts();
+// wallets — AccountHeader[] (regular wallet accounts)
+// faucets — AccountHeader[] (token faucet accounts)
+// accounts — AccountHeader[] (everything)
 ```
 
 ### useAccount(accountId: string)
 ```tsx
-const { data: account } = useAccount(accountId);
-// account.account — Account object (.id, .nonce, .bech32id())
-// account.assets — AssetBalance[] (assetId, amount, symbol?, decimals?)
-// account.getBalance(faucetId) — bigint balance for specific token
+const { account, assets, getBalance, isLoading, error, refetch } = useAccount(accountId);
+// account — Account object (.id, .nonce, .bech32id())
+// assets — AssetBalance[] (assetId, amount, symbol?, decimals?)
+// getBalance(faucetId) — bigint balance for specific token
 ```
 
 ### useNotes(filter?)
 ```tsx
-const { data: notes } = useNotes();
-// notes.notes — InputNoteRecord[]
-// notes.consumableNotes — ConsumableNoteRecord[]
-// notes.noteSummaries — NoteSummary[] (id, assets, sender)
-// notes.consumableNoteSummaries — NoteSummary[]
+const { notes, consumableNotes, noteSummaries, consumableNoteSummaries, isLoading, error, refetch } = useNotes();
+// notes — InputNoteRecord[]
+// consumableNotes — ConsumableNoteRecord[]
+// noteSummaries — NoteSummary[] (id, assets, sender)
+// consumableNoteSummaries — NoteSummary[]
 
 // Filter by account:
-const { data } = useNotes({ accountId: "0x..." });
+const { notes } = useNotes({ accountId: "0x..." });
 // Filter by status:
-const { data } = useNotes({ status: "committed" });
+const { notes } = useNotes({ status: "committed" });
 ```
 
 ### useSyncState()
@@ -76,26 +76,29 @@ await sync(); // Manual sync
 
 ### useAssetMetadata(faucetId: string | string[])
 ```tsx
-const { data: metadata } = useAssetMetadata(faucetId);
-// metadata.symbol — "TEST"
-// metadata.decimals — 8
+const { assetMetadata } = useAssetMetadata(faucetId);
+// assetMetadata — Map<string, AssetMetadata>
+// Each entry: { assetId, symbol?, decimals? }
+const meta = assetMetadata.get(faucetId);
+// meta.symbol — "TEST"
+// meta.decimals — 8
 ```
 
 ### useTransactionHistory(options?)
 ```tsx
-const { records, record, status, isLoading } = useTransactionHistory({ id: txId });
+const { records, record, status, isLoading, error, refetch } = useTransactionHistory({ id: txId });
 // status: "pending" | "committed" | "discarded" | null
 ```
 
 ## Mutation Hooks
 
-All return `{ mutate, data, isLoading, stage, error, reset }`.
+Each returns its own action function plus `isLoading`, `stage`, `error`, `reset`.
 
 **Transaction stages**: `"idle"` → `"executing"` → `"proving"` → `"submitting"` → `"complete"`
 
 ### useCreateWallet()
 ```tsx
-const { mutate: createWallet, isLoading } = useCreateWallet();
+const { createWallet, wallet, isCreating, error, reset } = useCreateWallet();
 const account = await createWallet({
   storageMode: "private",  // "private" | "public" | "network". Default: "private"
   mutable: true,           // Default: true
@@ -105,8 +108,8 @@ const account = await createWallet({
 
 ### useCreateFaucet()
 ```tsx
-const { mutate: createFaucet } = useCreateFaucet();
-const faucet = await createFaucet({
+const { createFaucet, faucet, isCreating, error, reset } = useCreateFaucet();
+const account = await createFaucet({
   tokenSymbol: "TEST",
   decimals: 8,             // Default: 8
   maxSupply: 1000000n,     // bigint!
@@ -116,7 +119,7 @@ const faucet = await createFaucet({
 
 ### useSend()
 ```tsx
-const { mutate: send, stage } = useSend();
+const { send, result, isLoading, stage, error, reset } = useSend();
 await send({
   from: senderAccountId,
   to: recipientAccountId,
@@ -130,8 +133,8 @@ await send({
 
 ### useMultiSend()
 ```tsx
-const { mutate: multiSend } = useMultiSend();
-await multiSend({
+const { sendMany, result, isLoading, stage, error, reset } = useMultiSend();
+await sendMany({
   from: senderAccountId,
   assetId: faucetId,
   recipients: [
@@ -144,7 +147,7 @@ await multiSend({
 
 ### useMint()
 ```tsx
-const { mutate: mint } = useMint();
+const { mint, result, isLoading, stage, error, reset } = useMint();
 await mint({
   targetAccountId: recipientId,
   faucetId: myFaucetId,
@@ -155,7 +158,7 @@ await mint({
 
 ### useConsume()
 ```tsx
-const { mutate: consume } = useConsume();
+const { consume, result, isLoading, stage, error, reset } = useConsume();
 await consume({
   accountId: myAccountId,
   noteIds: [noteId1, noteId2],
@@ -164,7 +167,7 @@ await consume({
 
 ### useSwap()
 ```tsx
-const { mutate: swap } = useSwap();
+const { swap, result, isLoading, stage, error, reset } = useSwap();
 await swap({
   accountId: myAccountId,
   offeredFaucetId: tokenA,
@@ -178,7 +181,7 @@ await swap({
 
 ### useTransaction() — Escape Hatch
 ```tsx
-const { mutate: execute } = useTransaction();
+const { execute, result, isLoading, stage, error, reset } = useTransaction();
 
 // With pre-built TransactionRequest:
 await execute({ accountId, request: txRequest });
@@ -192,9 +195,8 @@ await execute({
 
 ### useWaitForCommit()
 ```tsx
-const { mutate: waitForCommit } = useWaitForCommit();
-await waitForCommit({
-  transactionId: result.transactionId,
+const { waitForCommit } = useWaitForCommit();
+await waitForCommit(result.transactionId, {
   timeoutMs: 10000,   // Default: 10000
   intervalMs: 1000,    // Default: 1000
 });
@@ -202,8 +204,8 @@ await waitForCommit({
 
 ### useWaitForNotes()
 ```tsx
-const { mutate: waitForNotes } = useWaitForNotes();
-await waitForNotes({
+const { waitForConsumableNotes } = useWaitForNotes();
+await waitForConsumableNotes({
   accountId: myAccountId,
   minCount: 1,         // Default: 1
   timeoutMs: 10000,
@@ -214,7 +216,7 @@ await waitForNotes({
 
 ```tsx
 function SendButton({ from, to, assetId, amount }) {
-  const { mutate: send, stage, isLoading, error } = useSend();
+  const { send, stage, isLoading, error } = useSend();
 
   return (
     <div>

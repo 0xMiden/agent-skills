@@ -132,6 +132,8 @@ function useBlockHeader(blockNumber: number) {
   const { runExclusive } = useMiden();
   const [data, setData] = useState(null);
   useEffect(() => {
+    // Note: runExclusive() may be simplified in a future SDK version.
+    // Check SDK changelog when upgrading.
     runExclusive(async () => {
       const header = await client.getBlockHeaderByNumber(blockNumber);
       setData(header);
