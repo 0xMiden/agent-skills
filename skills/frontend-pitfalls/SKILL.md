@@ -18,7 +18,7 @@ function App() {
 
 // CORRECT — use loadingComponent or check isReady
 <MidenProvider
-  config={{ rpcUrl: "devnet" }}
+  config={{ rpcUrl: "testnet" }}
   loadingComponent={<p>Loading WASM...</p>}
 >
   <App />
@@ -44,8 +44,9 @@ const handleClick = async () => {
 };
 
 // CORRECT — use runExclusive for sequential execution
+const client = useMidenClient();
 const { runExclusive } = useMiden();
-await runExclusive(async (client) => {
+await runExclusive(async () => {
   await client.syncState();
   // now safe to do next operation
 });
@@ -57,22 +58,22 @@ Built-in hooks (useSend, useConsume, etc.) already use runExclusive internally. 
 
 WASM SharedArrayBuffer requires these headers. Without them, WASM init silently fails.
 
-```ts
-// REQUIRED in vite.config.ts
-server: {
-  headers: {
-    "Cross-Origin-Opener-Policy": "same-origin",
-    "Cross-Origin-Embedder-Policy": "require-corp",
-  },
-},
+The [frontend template](https://github.com/0xMiden/frontend-template)'s source-of-truth pattern is to opt into COOP/COEP via the Vite plugin explicitly:
 
-// ALSO REQUIRED on production server (nginx, Vercel, Cloudflare)
-// See vite-wasm-setup skill for deployment configs
+```ts
+// in your app's vite.config.ts
+import { midenVitePlugin } from "@miden-sdk/vite-plugin";
+
+export default defineConfig({
+  plugins: [react(), midenVitePlugin({ crossOriginIsolation: true })],
+});
 ```
 
-**Gotcha**: These headers break third-party iframes, external scripts without CORS, and OAuth popups. Use `credentialless` for COEP if cross-origin resources are needed.
+Do not rely on the plugin's own default — `@miden-sdk/vite-plugin` defaults `crossOriginIsolation` to `false`, and that default has shifted across releases. Pass `true` explicitly on any route that runs Miden client code.
 
-**Note**: `midenVitePlugin()` from `@miden-sdk/vite-plugin` handles COOP/COEP automatically via its `crossOriginIsolation` option (defaults to `false` to avoid breaking OAuth popups). Enable it instead of setting headers manually.
+COOP/COEP must also be set on the production server — the plugin only covers the Vite dev server. See `vite-wasm-setup` for per-host configs (Nginx, Vercel, Cloudflare).
+
+**Gotcha (opt-out path)**: Cross-origin-isolation breaks third-party iframes, external scripts without CORS, and OAuth popups. If a route must host those and cannot use Miden client code, either (a) use `Cross-Origin-Embedder-Policy: credentialless` for weaker isolation that still allows most cross-origin resources, or (b) scope `crossOriginIsolation: false` to that specific route and accept that Miden operations won't work there. Do not disable isolation globally as a convenience.
 
 ## FP4: BigInt Type Mismatch (HIGH)
 
@@ -117,7 +118,7 @@ Default `autoSyncInterval` is 15000ms (15 seconds). Each sync triggers re-render
 
 ```tsx
 // PROBLEM — form resets every 15 seconds because parent re-renders
-<MidenProvider config={{ rpcUrl: "devnet" }}>
+<MidenProvider config={{ rpcUrl: "testnet" }}>
   <SendForm />  {/* re-renders on every sync */}
 </MidenProvider>
 
@@ -125,7 +126,7 @@ Default `autoSyncInterval` is 15000ms (15 seconds). Each sync triggers re-render
 const MemoizedForm = React.memo(SendForm);
 
 // SOLUTION 2 — disable auto-sync for manual control
-<MidenProvider config={{ rpcUrl: "devnet", autoSyncInterval: 0 }}>
+<MidenProvider config={{ rpcUrl: "testnet", autoSyncInterval: 0 }}>
 ```
 
 ## FP7: IndexedDB State Loss (MEDIUM)
@@ -138,40 +139,36 @@ The client persists accounts, keys, and notes in IndexedDB. Browser "Clear site 
 
 ## FP8: Vite Configuration Requirements (MEDIUM)
 
-The `@miden-sdk/vite-plugin` package handles all Miden-specific Vite config.
-The minimal setup is:
+The `@miden-sdk/vite-plugin` package handles all Miden-specific Vite config. The template's source-of-truth pattern — which you should copy for any new Miden app — is:
 
 ```ts
 import { midenVitePlugin } from "@miden-sdk/vite-plugin";
 
 export default defineConfig({
-  plugins: [react(), midenVitePlugin()],
+  plugins: [react(), midenVitePlugin({ crossOriginIsolation: true })],
 });
 ```
 
-`midenVitePlugin()` handles: WASM loading, top-level await, WASM pre-bundling exclusion,
-and optionally COOP/COEP headers (via the `crossOriginIsolation` option, defaults to `false`
-to avoid breaking OAuth popups).
+`midenVitePlugin()` handles WASM loading, top-level await, pre-bundling exclusion, and — when `crossOriginIsolation: true` is passed — emits the COOP `same-origin` + COEP `require-corp` headers the SDK requires for `SharedArrayBuffer`.
 
-| Option | Default | Purpose |
-|--------|---------|---------|
-| `crossOriginIsolation` | `false` | Add COOP/COEP headers for SharedArrayBuffer |
+| Option | Plugin default | Template default | Purpose |
+|--------|----------------|------------------|---------|
+| `crossOriginIsolation` | `false` | **`true`** | Emit COOP/COEP headers for SharedArrayBuffer |
 
-Enable `crossOriginIsolation: true` only if your app doesn't use OAuth or cross-origin iframes.
-For production COOP/COEP, set headers at the server level (see vite-wasm-setup skill).
+Always pass `crossOriginIsolation: true` explicitly. The plugin's `false` default is wrong for a Miden app, and relying on it risks silent WASM-init failures if the default shifts in a future release. The opt-out path (routes that host OAuth popups or cross-origin iframes incompatible with isolation) is discussed in FP3. For production, set the same headers at the server level — see `vite-wasm-setup` for host-specific configs.
 
 ## FP9: React StrictMode Double-Init (LOW)
 
-React 19 StrictMode double-invokes effects in development. MidenProvider handles this via `isInitializedRef`, but direct `WebClient.createClient()` calls will initialize twice.
+React 19 StrictMode double-invokes effects in development. MidenProvider handles this via `isInitializedRef`, but direct `WasmWebClient.createClient()` calls will initialize twice. (The SDK exports `WasmWebClient` as `WebClient` for convenience.)
 
 ```tsx
 // WRONG — manual client creation in useEffect
 useEffect(() => {
-  const client = await WebClient.createClient(url); // called twice in dev
+  const client = await WasmWebClient.createClient(url); // called twice in dev
 }, []);
 
 // CORRECT — always use MidenProvider
-<MidenProvider config={{ rpcUrl: "devnet" }}>
+<MidenProvider config={{ rpcUrl: "testnet" }}>
 ```
 
 ## Quick Reference
@@ -180,10 +177,10 @@ useEffect(() => {
 |---|---------|----------|---------------|
 | FP1 | WASM init race | CRITICAL | Use loadingComponent or check isReady |
 | FP2 | Recursive WASM | CRITICAL | Use runExclusive() for all direct client access |
-| FP3 | COOP/COEP | CRITICAL | Add headers in vite.config.ts AND production server |
+| FP3 | COOP/COEP | CRITICAL | Add headers in your `vite.config.ts` AND production server |
 | FP4 | BigInt | HIGH | All amounts are bigint (1000n not 1000) |
 | FP5 | Bech32 mismatch | HIGH | Match network in rpcUrl and addresses |
 | FP6 | Auto-sync | MEDIUM | Set autoSyncInterval: 0 if UI stability matters |
 | FP7 | IndexedDB loss | MEDIUM | Warn users; use external signers for production |
-| FP8 | Vite config | MEDIUM | Use `midenVitePlugin()` — it handles all Miden Vite config |
+| FP8 | Vite config | MEDIUM | Always pass `midenVitePlugin({ crossOriginIsolation: true })` — don't rely on the plugin default |
 | FP9 | StrictMode | LOW | Use MidenProvider, not manual client creation |

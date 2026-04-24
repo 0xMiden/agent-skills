@@ -22,13 +22,18 @@ Rule of thumb: if the task involves more than one contract or a pattern not cove
 
 This is the single highest-leverage practice for AI-assisted Miden development.
 
-**Build loop**: After every contract edit, run `cargo miden build --manifest-path contracts/<name>/Cargo.toml --release`. The project's build hook does this automatically. If the build fails:
+**Build loop**: After every contract edit, run `cargo miden build --manifest-path contracts/<name>/Cargo.toml --release` (adjust the path to your project's contract layout). If your project has a build hook configured, it may do this automatically. If the build fails:
 1. Read the error message
-2. Search the source repos for a working example of the pattern that failed
-3. Adapt the working pattern to your use case
-4. Rebuild
+2. Translate obvious SDK migration errors first:
+   - `.as_u64()` -> `.as_canonical_u64()`
+   - `Recipient::compute(...)` -> `note::build_recipient(...)`
+   - `Value` -> `StorageValue<T>`
+   - `StorageMap` -> `StorageMap<K, V>`
+3. Search the source repos for a working example of the pattern that failed
+4. Adapt the working pattern to your use case
+5. Rebuild
 
-**Test loop**: Write tests alongside contracts. Run with `cargo test -p integration --release`. When tests fail:
+**Test loop**: Write tests alongside contracts. Run full repo checks with `cargo make test` (or `cargo test -p integration --release` for a faster integration-only loop). When tests fail:
 1. Check the error — is it a build error, a runtime assertion, or a proof failure?
 2. For assertion failures: check felt arithmetic (modular wrapping) and storage slot naming
 3. For unexpected behavior: compare your code against the closest working example in source repos
@@ -79,8 +84,8 @@ git clone --depth 1 --branch main https://github.com/0xMiden/compiler.git ../com
 # Required: contains client API for deployment and chain interaction
 git clone --depth 1 --branch main https://github.com/0xMiden/miden-client.git ../miden-client
 
-# Recommended: complete working banking app with advanced patterns
-git clone --branch main https://github.com/keinberger/miden-bank.git ../miden-bank
+# Recommended: complete working banking app with advanced patterns in the `examples/miden-bank` folder of the tutorials repo
+git clone --branch main https://github.com/0xMiden/tutorials.git ../tutorials
 ```
 
 **Note**: These commands clone the stable `main` branch. Only use `--branch next` if the user explicitly requests the experimental/upcoming version of the compiler or source repos.
@@ -122,7 +127,7 @@ Contains the Rust API for deploying contracts and interacting with the Miden net
 A complete banking application built with the Rust SDK. Demonstrates advanced patterns that go beyond the basic skills.
 
 - Multiple contract types working together (account, deposit note, withdraw note, tx script)
-- Advanced patterns: StorageMap + Value composition, felt arithmetic safety, cross-component calls, P2ID output note creation from within contracts
+- Advanced patterns: `StorageMap<K, V>` + `StorageValue<T>` composition, felt arithmetic safety, cross-component calls, P2ID output note creation from within contracts
 - Multi-step integration tests with output note verification
 
 **Explore when**: Building multi-contract applications, understanding how pieces fit together, seeing a complete working app end-to-end.
@@ -133,12 +138,12 @@ A complete banking application built with the Rust SDK. Demonstrates advanced pa
 
 | Building This | Explore These Repos | What to Look For |
 |---|---|---|
-| Account component with storage | `compiler/` examples, `miden-bank/` contracts | StorageMap/Value patterns, pub method signatures |
-| Note script | `compiler/` examples, `miden-bank/` contracts | `#[note_script]` pattern, cross-component calls, note inputs parsing |
+| Account component with storage | `compiler/` examples, `miden-bank/` contracts | `StorageMap<K, V>` / `StorageValue<T>` patterns, pub method signatures |
+| Note script | `compiler/` examples, `miden-bank/` contracts | `#[note_script]` pattern, cross-component calls, note storage parsing |
 | Transaction script | `compiler/` examples, `miden-bank/` contracts | `#[tx_script]` pattern, Account binding import |
 | Authentication component | `compiler/` examples | Auth component patterns (NoAuth, Falcon512, ECDSA) |
 | Faucet (token minting) | `compiler/` examples | BasicFungibleFaucet example, mint/burn pattern |
-| P2ID output notes | `miden-bank/` contracts, `miden-base/` standards (data layouts) | Recipient computation, script root, output_note creation |
+| P2ID output notes | `miden-bank/` contracts, `miden-base/` standards (data layouts) | `note::build_recipient`, script root, `output_note` creation |
 | Swap notes | `miden-base/` standards (data layouts) | SwapNote data layout, tag construction, payback flow |
 | Multi-step tests | `miden-bank/` integration tests | Init → operate → verify flow, output note verification |
 | Client deployment | `miden-client/` | TransactionRequestBuilder, sync, submit patterns |
@@ -154,10 +159,11 @@ These patterns go beyond what the basic skills cover. For each, the source repos
 Accounts can include standard components (BasicWallet, authentication) alongside custom logic at account creation time. Standard components are MASM-only (not callable from Rust), but they are composed into accounts via the testing/deployment infrastructure. The `compiler/` examples show how to compose accounts with multiple components.
 
 ### Output Note Creation from Contracts
-Create output notes (like P2ID) from within contract code. Requires computing a Recipient hash from serial number, script root, and inputs. The `miden-bank/` withdraw pattern demonstrates this end-to-end.
+Create output notes (like P2ID) from within contract code. Requires building a recipient with `note::build_recipient(serial_num, script_root, storage)` and then using `output_note::create(...)`. The `miden-bank/` withdraw pattern demonstrates this end-to-end.
 
-### Note Inputs Protocol
-Pass structured data to notes via `Vec<Felt>` inputs. Define your input layout, document the field ordering, and parse inputs in the `#[note_script]` function. The `miden-bank/` withdraw-request-note demonstrates parsing 10 Felts into asset, serial number, tag, and note type.
+### Note Storage Protocol
+Notes receive storage data as `Vec<Felt>` which is deserialized into the note object. In the `#[note_script]` method the `self` is deserialized from the note storage (`active_note::get_storage()`).
+Attached assets are separate and should be read with `active_note::get_assets()`.
 
 ### Atomic Swaps
 The standard SwapNote in `miden-base/` creates a payback P2ID note automatically when consumed. Explore the SwapNote builder to understand tag construction, storage layout, and the payback mechanism.
