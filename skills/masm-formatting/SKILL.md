@@ -29,7 +29,7 @@ The conventions below are derived from canonical MASM in [protocol](https://gith
 | Single felt | `lower_snake_case` | `final_nonce`, `note_idx`, `amount` |
 | Multi-felt composite grouped in one name | `lower_snake_case_{part1,part2}` | `account_id_{suffix,prefix}`, `faucet_id_{suffix,prefix}`, `sender_{suffix,prefix}` |
 
-Composite items always use `are` in `Where:` since they name a group of felts, per `masm-doc-comments`. Brace spacing is inconsistent in source: both `{suffix,prefix}` and `{suffix, prefix}` appear, sometimes within the same file. Match the surrounding file; do not reformat existing braces.
+Composite items always use `are` in `Where:` since they name a group of felts, per `masm-doc-comments`. Brace spacing and part order are inconsistent in source: both `{suffix,prefix}` and `{suffix, prefix}` (with a space) appear, and both `{suffix,prefix}` (suffix-first, the more common form in protocol procs) and `{prefix,suffix}` (prefix-first) appear, sometimes within the same file. Match the surrounding file; do not reformat existing braces.
 
 Canonical references in [protocol](https://github.com/0xMiden/protocol): `crates/miden-protocol/asm/protocol/faucet.masm`, `native_account.masm`, `asset.masm`, `active_note.masm`, `active_account.masm`.
 
@@ -44,7 +44,7 @@ Canonical references in [protocol](https://github.com/0xMiden/protocol): `crates
 | Mixed inline tracker with two `(N)` spans | `# => [pad(16), foreign_procedure_inputs(15)]` |
 | Variable-length remainder | trailing `, ...` |
 
-Canonical references: `crates/miden-protocol/asm/protocol/tx.masm` in [protocol](https://github.com/0xMiden/protocol) for the `(N)` family in both doc blocks and inline trackers; `crates/lib/core/asm/crypto/hashes/poseidon2.masm` in [miden-vm](https://github.com/0xMiden/miden-vm) for the `, ...` trailing-remainder form.
+Canonical references: `crates/miden-protocol/asm/protocol/tx.masm` in [protocol](https://github.com/0xMiden/protocol) for the `(N)` family in both doc blocks and inline trackers and for the `, ...` trailing-remainder form; `crates/lib/core/asm/crypto/hashes/poseidon2.masm` and `crates/lib/core/asm/stark/deep_queries.masm` in [miden-vm](https://github.com/0xMiden/miden-vm) for further `, ...` examples.
 
 ## 3. Doc comment divergences across repos
 
@@ -119,7 +119,7 @@ Canonical references: `crates/miden-protocol/asm/protocol/native_account.masm` a
 
 `masm-inline-comments` owns the lowercase-start and comment-only-non-obvious rules. This skill adds one integration rule: an inline `# => [...]` tracker uses the exact same item names, capitalization, and `(N)` span notation as the `#!` doc block.
 
-Synthetic illustration:
+Synthetic illustration (not a real proc; see Canonical reference below for a real example):
 
 ```masm
 #! Outputs: [final_nonce]
@@ -128,7 +128,7 @@ pub proc example
 end
 ```
 
-The single-felt name `final_nonce` is identical in the doc block and the inline tracker. The `pad(15)` span follows the `(N)` family rule. Word-sized items are UPPERCASE in both places; composite names like `account_id_{suffix,prefix}` decompose into their underlying felts in inline trackers (e.g. `account_id_suffix`, `account_id_prefix`).
+In the illustration above, the single-felt name `final_nonce` is identical in the doc block and the inline tracker, and the `pad(15)` span follows the `(N)` family rule. The same principle holds in real source: Word-sized items are UPPERCASE in both places, and composite names like `account_id_{suffix,prefix}` decompose into their underlying felts in inline trackers (e.g. `account_id_suffix`, `account_id_prefix`).
 
 Canonical reference: any public proc in `crates/miden-protocol/asm/protocol/native_account.masm` in [protocol](https://github.com/0xMiden/protocol) shows this pattern end-to-end.
 
@@ -187,13 +187,13 @@ The full set of source files referenced above, by purpose. Repos: [protocol](htt
 
 | File | What to study |
 |---|---|
-| `crates/miden-protocol/asm/protocol/native_account.masm` (protocol) | end-to-end protocol-style proc: composite `{prefix,suffix}`, `Panics if:`, `Invocation:`, inline `pad(N)` tracking |
+| `crates/miden-protocol/asm/protocol/native_account.masm` (protocol) | end-to-end protocol-style proc: composite `{suffix,prefix}`, `Panics if:`, `Invocation:`, inline `pad(N)` tracking |
 | `crates/miden-protocol/asm/protocol/faucet.masm` (protocol) | Word UPPERCASE in `Inputs:`/`Outputs:`, plural heading style |
 | `crates/miden-protocol/asm/protocol/tx.masm` (protocol) | `(N)` span family in both doc blocks and inline trackers |
 | `crates/miden-protocol/asm/protocol/asset.masm` (protocol) | `assert.err=ERR_*` named-constant style |
 | `crates/miden-protocol/asm/protocol/active_account.masm` (protocol) | brace-spacing variance and additional `assert.err=ERR_*` |
 | `crates/miden-protocol/asm/protocol/note.masm` (protocol) | multi-line `Cycles:` outside of stdlib |
-| `crates/lib/core/asm/crypto/hashes/poseidon2.masm` (miden-vm) | singular `Input:`/`Output:`, all three `Cycles:` shapes, chained u32 guard with string assert |
+| `crates/lib/core/asm/crypto/hashes/poseidon2.masm` (miden-vm) | singular `Input:`/`Output:` and all three `Cycles:` shapes |
 | `crates/lib/core/asm/mem.masm` (miden-vm) | plural `Inputs:`/`Outputs:` co-existing in vm, `# Panics` heading, `Total cycles:` prose variant |
 | `crates/lib/core/asm/math/u128.masm` (miden-vm) | `Invocation: exec` present in newer vm files |
 | `crates/lib/core/asm/collections/smt.masm` (miden-vm) | chained `u32assert2 u32lte.<CONST> assert.err="..."` guard |
