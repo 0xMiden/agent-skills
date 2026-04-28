@@ -1,9 +1,19 @@
 ---
 name: idxdb-patterns
-description: Enforce conventions for the IndexedDB/Dexie persistence layer in miden-client (idxdb-store crate). Use when editing TypeScript or JavaScript in crates/idxdb-store/src/ts/ or crates/idxdb-store/src/js/, writing Dexie transactions, or modifying the database schema.
+description: Enforce conventions for the IndexedDB/Dexie persistence layer in miden-client v0.14 (idxdb-store crate). Use when editing TypeScript or JavaScript in `crates/idxdb-store/src/ts/` or `crates/idxdb-store/src/js/`, writing Dexie transactions, or modifying the database schema.
 ---
 
-# IndexedDB Store Patterns (idxdb-store)
+# IndexedDB Store Patterns (idxdb-store, v0.14)
+
+The v0.14 schema splits account-related tables into `Latest…` /
+`Historical…` pairs to support the new account-history pruning feature
+(`client.pruneAccountHistory()`). Always check
+`crates/idxdb-store/src/ts/schema.ts` for the canonical table list before
+adding rows or filters — the table set has grown
+(`AccountAuth`, `AccountKeyMapping`, `Addresses`, `Settings`,
+`ForeignAccountCode`, `NotesScripts`, `TransactionScripts`,
+`PartialBlockchainNodes`, `LatestStorageMapEntries`,
+`HistoricalStorageMapEntries`, …) since v0.13.
 
 ## Build Workflow
 
@@ -57,51 +67,97 @@ Rules:
 
 ## Schema Interfaces
 
-Define TypeScript interfaces for each table with `I` prefix:
+Define TypeScript interfaces for each table with `I` prefix. Use `Latest…`
+/ `Historical…` pairs for anything that participates in account history
+(headers, storage slots, storage map entries, vault assets). Account
+headers use the slightly older `IAccount` / `IHistoricalAccount` naming
+inside `latestAccountHeaders` / `historicalAccountHeaders`:
 
 ```typescript
-export interface IAccount {
-  id: string;
-  codeRoot: string;
-  storageRoot: string;
-  vaultRoot: string;
-  nonce: string;
-  committed: boolean;
-  accountSeed?: Uint8Array;
-  accountCommitment: string;
-  locked: boolean;
-}
-
 export interface IAccountCode {
   root: string;
   code: Uint8Array;
 }
+
+export interface ILatestAccountStorage {
+  accountId: string;
+  slotName: string;
+  slotValue: string;
+  slotType: number;
+}
+
+export interface IHistoricalAccountStorage {
+  accountId: string;
+  replacedAtNonce: string;
+  slotName: string;
+  oldSlotValue: string | null;
+  slotType: number;
+}
+
+export interface ILatestAccountAsset {
+  accountId: string;
+  vaultKey: string;     // ASSET_KEY in v0.14 — see `miden-concepts` skill
+  asset: string;        // ASSET_VALUE serialized
+}
+
+export interface IHistoricalAccountAsset {
+  accountId: string;
+  replacedAtNonce: string;
+  vaultKey: string;
+  oldAsset: string | null;
+}
 ```
 
 Rules:
-- Use `string` for hex-encoded values (hashes, IDs, nonces)
+- Use `string` for hex-encoded values (hashes, IDs, nonces, vault keys)
 - Use `Uint8Array` for raw binary data
-- Use `?` suffix for optional fields (e.g., `accountSeed?`)
-- Use `boolean` for flags, `number` for block heights
+- Use `?` suffix for optional fields, `| null` when the column explicitly
+  represents the absence of a previous value (replaced-from in history)
+- Use `boolean` for flags, `number` for block heights and slot types
+- The asset layer in v0.14 is two-word: `vaultKey` is the `ASSET_KEY` and
+  `asset` is the encoded `ASSET_VALUE`. Don't try to fold them back into a
+  single hex string.
 
 ## Table Enum
 
-Define tables as a TypeScript enum:
+Define tables as a TypeScript enum. Match `crates/idxdb-store/src/ts/schema.ts`
+exactly — the Rust side imports table names verbatim:
 
 ```typescript
 enum Table {
   AccountCode = "accountCode",
-  AccountStorage = "accountStorage",
-  AccountAssets = "accountAssets",
-  Accounts = "accounts",
+  LatestAccountStorage = "latestAccountStorage",
+  HistoricalAccountStorage = "historicalAccountStorage",
+  LatestAccountAssets = "latestAccountAssets",
+  HistoricalAccountAssets = "historicalAccountAssets",
+  LatestStorageMapEntries = "latestStorageMapEntries",
+  HistoricalStorageMapEntries = "historicalStorageMapEntries",
+  LatestAccountHeaders = "latestAccountHeaders",
+  HistoricalAccountHeaders = "historicalAccountHeaders",
+  AccountAuth = "accountAuth",
+  AccountKeyMapping = "accountKeyMapping",
+  Addresses = "addresses",
+  Transactions = "transactions",
+  TransactionScripts = "transactionScripts",
   InputNotes = "inputNotes",
   OutputNotes = "outputNotes",
-  Transactions = "transactions",
-  BlockHeaders = "blockHeaders",
+  NotesScripts = "notesScripts",
   StateSync = "stateSync",
+  BlockHeaders = "blockHeaders",
+  PartialBlockchainNodes = "partialBlockchainNodes",
   Tags = "tags",
+  ForeignAccountCode = "foreignAccountCode",
+  Settings = "settings",
 }
 ```
+
+Adding a new table requires a coordinated update in three places:
+1. `Table` enum + interface in `schema.ts`
+2. The Dexie store version (`MidenDatabase.version(...).stores({...})`),
+   bumping the version number and writing a migration if the change is
+   not purely additive
+3. Rust-side reads/writes that import the table name through
+   `#[wasm_bindgen(module = "/src/js/schema.js")]`
 
 ## Dexie Transactions
 
@@ -193,8 +249,8 @@ Functions that query data should return empty arrays or `null` on error, not thr
 export async function getAccountIds(dbId: string) {
   try {
     const db = getDatabase(dbId);
-    const tracked = await db.trackedAccounts.toArray();
-    return tracked.map((entry) => entry.id);
+    const headers = await db.latestAccountHeaders.toArray();
+    return headers.map((entry) => entry.accountId);
   } catch (error) {
     logWebStoreError(error, "Error while fetching account IDs");
   }
@@ -210,34 +266,48 @@ Use Dexie's query API:
 
 ```typescript
 // Get all records
-const records = await db.accounts.toArray();
+const records = await db.latestAccountHeaders.toArray();
 
 // Iterate with side effects
-await db.accounts.each((record) => { /* ... */ });
+await db.latestAccountHeaders.each((record) => { /* ... */ });
 
 // Get by primary key
-const record = await db.accounts.get(id);
+const record = await db.latestAccountHeaders.get(accountId);
 
 // Filter with where clause
-const filtered = await db.accounts.where("committed").equals(1).toArray();
+const filtered = await db.latestAccountHeaders
+  .where("storageMode")
+  .equals("public")
+  .toArray();
 ```
 
-### Deduplication
+### Latest vs Historical
 
-When multiple versions of a record exist, keep the latest (highest nonce):
+For account state, "latest" tables hold the current row keyed by
+`accountId` (or `accountId + slotName / vaultKey`); the matching
+"historical" tables hold previous rows keyed by `replacedAtNonce`. To
+find the row in effect at a specific nonce:
 
 ```typescript
-const latestRecordsMap: Map<string, IAccount> = new Map();
+// Walk back through the historical rows until one was replaced strictly
+// after the target nonce, then take its `oldSlotValue` (or fall back to
+// the latest row if no historical row covers the target nonce).
+const targetNonce = BigInt("123");
+const historical = await db.historicalAccountStorage
+  .where(["accountId", "slotName"])
+  .equals([accountId, slotName])
+  .filter((r) => BigInt(r.replacedAtNonce) > targetNonce)
+  .first();
 
-await db.accounts.each((record) => {
-  const existing = latestRecordsMap.get(record.id);
-  if (!existing || BigInt(record.nonce) > BigInt(existing.nonce)) {
-    latestRecordsMap.set(record.id, record);
-  }
-});
-
-const latestRecords = Array.from(latestRecordsMap.values());
+const value = historical
+  ? historical.oldSlotValue
+  : (await db.latestAccountStorage.get([accountId, slotName]))?.slotValue;
 ```
+
+`client.pruneAccountHistory()` is the public entry point that drops
+`Historical…` rows below a configured retention floor — write functions
+must keep the latest row authoritative regardless of what history is
+present.
 
 ### Serialization Conventions
 

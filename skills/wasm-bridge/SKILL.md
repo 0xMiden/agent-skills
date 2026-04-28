@@ -1,9 +1,9 @@
 ---
 name: wasm-bridge
-description: Enforce conventions for the Rust-to-JavaScript WASM boundary in miden-client (web-client crate). Use when exposing Rust methods to JS via wasm_bindgen, creating newtype wrappers, handling errors across the boundary, or bridging JS Promises to Rust Futures.
+description: Enforce conventions for the Rust↔JavaScript WASM boundary in miden-client v0.14 (web-client crate). Use when exposing Rust methods to JS via wasm_bindgen, creating newtype wrappers, handling errors across the boundary, bridging JS Promises to Rust Futures, or layering the public `MidenClient` resource API on top of the WASM-bound `WebClient`.
 ---
 
-# WASM Bridge Patterns (web-client)
+# WASM Bridge Patterns (web-client, v0.14)
 
 ## Exposing Rust Methods to JavaScript
 
@@ -240,21 +240,66 @@ Rules:
 
 ## JS Wrapper Layer
 
-The `crates/web-client/js/index.js` wrapper:
+The crate ships **two** JS layers under `crates/web-client/js/`:
 
-- Uses `static async createClient()` factory method
-- Lazy-loads WASM via `getWasmWebClient()`
-- Uses `Proxy` to forward unknown method calls to the WASM WebClient
-- Handles Web Worker communication with `postMessage()` and `Map<requestId, {resolve, reject}>`
-- Deserializes errors preserving the full chain (name, message, stack, cause, help)
+1. **`WebClient`** (`js/index.js`) — the WASM-bound class re-exported as
+   `WasmWebClient`. Wraps the `WebClient` struct from `crates/web-client/src/lib.rs`
+   and adds JS-side concerns:
+   - `_serializeWasmCall` queue that linearizes WASM calls (the kernel takes
+     `&mut self`, so the JS side must not interleave them)
+   - `acquireSyncLock` (Web Locks) used by `syncStateWithTimeout` to coordinate
+     across tabs
+   - method-classification sets (`SYNC_METHODS`, `READ_METHODS`,
+     `WRITE_METHODS`) enforced by `scripts/check-method-classification.js`
+   - `safe-arrays.js` wrappers that override the auto-generated wasm-bindgen
+     array constructors (`NoteArray`, `OutputNoteArray`, `AccountArray`, …) so
+     `new NoteArray([note])` does not move the underlying Rust value out of
+     the caller's handle. Always reach for these instead of constructing the
+     auto-generated classes directly.
+2. **`MidenClient`** (`js/client.js`) — the public, resource-based wrapper
+   that owns a `WebClient` instance and exposes typed sub-objects:
+   `client.accounts`, `client.transactions`, `client.notes`, `client.tags`,
+   `client.settings`, `client.compile`, `client.keystore`. Each resource lives
+   under `js/resources/<name>.js`.
 
-When adding new simplified JS wrappers, follow this pattern:
+`index.js` injects the `WebClient` constructor and the `getWasm` initializer
+into `MidenClient` via static fields (`_WasmWebClient`, `_getWasmOrThrow`,
+`_MockWasmWebClient`) to break the import cycle.
+
+### Adding a method
+
+When extending the SDK, choose the layer based on whether the work is
+**Rust-side** or **glue/shape**:
+
+- **Rust-side logic** (new RPC call, new transaction request type,
+  storage access): expose a method on the WASM `WebClient` impl with
+  `#[wasm_bindgen(js_name = "camelCase")]`, then surface it from the
+  matching resource in `js/resources/`. Update the method-classification
+  sets in `index.js` so the linter accepts it.
+- **JS-side ergonomics** (option-bag normalization, account-ref
+  resolution, type coercion): keep the work in the resource module and
+  call the existing WASM method.
+
+Resource methods follow this shape:
+
 ```javascript
-// In the Proxy handler or on the WebClient class
-async simplifiedMethod(stringArg) {
-  const wasmClient = await this.getWasmWebClient();
-  const nativeId = AccountId.fromHex(stringArg);  // Convert string → native type
-  const result = await wasmClient.existingMethod(nativeId);
-  return result;  // Return JS-friendly value
+// crates/web-client/js/resources/accounts.js
+async get(ref) {
+  this.#client.assertNotTerminated();
+  const wasm = await this.#getWasm();
+  const id = resolveAccountRef(ref, wasm);   // accepts string | AccountId | Account | AccountHeader
+  const account = await this.#inner.getAccount(id);
+  return account ?? null;
 }
 ```
+
+Rules:
+
+- Always call `this.#client.assertNotTerminated()` at entry — late callbacks
+  on a torn-down client otherwise panic with "null pointer passed to rust".
+- Resolve account/note refs through the helpers in `js/resources/utils.js`
+  so callers can pass any natural form (hex, bech32 address, WASM type).
+- Return WASM-owned objects (e.g. `Account`, `AccountHeader`) directly when
+  callers will use them again — wrapping them in plain JS DTOs forces
+  another WASM round-trip and breaks identity for code that compares by
+  reference.

@@ -1,9 +1,14 @@
 ---
 name: rust-client-patterns
-description: Enforce coding conventions for the miden-client Rust codebase (rust-client, sqlite-store). Use when editing, reviewing, or creating Rust code in the miden-client workspace — especially error handling, Store trait methods, Client impl blocks, and module organization.
+description: Enforce coding conventions for the miden-client v0.14 Rust codebase (rust-client, sqlite-store, idxdb-store, web-client). Use when editing, reviewing, or creating Rust code in the miden-client workspace — covers error handling, Store trait methods, the Client<AUTH> generic and v0.14 Keystore super-trait, builder constructors, lazy reader patterns, and `no_std` organization.
 ---
 
-# Miden Client Rust Patterns
+# Miden Client Rust Patterns (v0.14)
+
+The crate ships under `crates/rust-client` with companion crates for each
+backend (`crates/sqlite-store`, `crates/idxdb-store`, `crates/web-client`).
+v0.14 minimum supported Rust version is **1.93** — pin
+`rust-toolchain.toml` to `channel = "1.93"`.
 
 ## Section Headers
 
@@ -166,24 +171,59 @@ Rules:
 
 ### Impl Block Constraints
 
-Apply the AUTH constraint per impl block, not on the struct:
+Apply the AUTH constraint per impl block, not on the struct. Methods that
+sign transactions need at least the [`TransactionAuthenticator`] trait;
+methods that manage stored secret keys need the v0.14
+[`Keystore`](super-trait of `TransactionAuthenticator`):
 
 ```rust
 impl<AUTH> Client<AUTH>
 where
     AUTH: TransactionAuthenticator + Sync + 'static,
 {
-    // methods that need authentication
+    // methods that only need to sign
+}
+
+impl<AUTH> Client<AUTH>
+where
+    AUTH: Keystore + Sync + 'static,
+{
+    // methods that also manage keys (insert/get/remove/getCommitments)
 }
 ```
 
-Methods that don't need AUTH can use unconstrained blocks:
+Methods that don't need AUTH at all can use unconstrained blocks:
 
 ```rust
 impl<AUTH> Client<AUTH> {
     // methods that work without authentication
 }
 ```
+
+### v0.14 `Keystore` super-trait
+
+`Keystore` (in `miden_client::keystore`) extends `TransactionAuthenticator`
+and adds the unified key-management surface:
+
+```rust
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+pub trait Keystore: TransactionAuthenticator {
+    async fn add_key(&self, key: &AuthSecretKey, account_id: AccountId) -> Result<(), KeyStoreError>;
+    async fn remove_key(&self, pub_key: PublicKeyCommitment) -> Result<(), KeyStoreError>;
+    async fn get_key(&self, pub_key: PublicKeyCommitment) -> Result<Option<AuthSecretKey>, KeyStoreError>;
+    async fn get_account_key_commitments(&self, account_id: &AccountId)
+        -> Result<BTreeSet<PublicKeyCommitment>, KeyStoreError>;
+    async fn get_account_id_by_key_commitment(&self, pub_key_commitment: PublicKeyCommitment)
+        -> Result<Option<AccountId>, KeyStoreError>;
+    async fn get_keys_for_account(&self, account_id: &AccountId)
+        -> Result<Vec<AuthSecretKey>, KeyStoreError> { ... } // default impl
+}
+```
+
+The pre-v0.14 `keystore.insert_key` + `client.register_account_public_key_commitments`
+split is gone — call `keystore.add_key(&secret, account_id)` once.
+`FilesystemKeyStore` (native) and `WebKeyStore` (WASM) both impl `Keystore`.
 
 ### Builder Pattern
 
@@ -199,7 +239,76 @@ pub struct ClientBuilder<AUTH> {
 }
 ```
 
-Provide network-specific constructors: `for_testnet()`, `for_devnet()`, `for_localhost()`.
+Provide network-specific constructors: `for_testnet()`, `for_devnet()`,
+`for_localhost()`. Each pre-fills the RPC endpoint, default prover, and
+RNG appropriate for that network. Construction is async because the
+underlying GrpcClient may need to dial.
+
+```rust
+let client = ClientBuilder::for_testnet()
+    .store(store)
+    .authenticator(Arc::new(keystore))   // accepts any AUTH: Keystore
+    .build()
+    .await?;
+```
+
+## Lazy Reader Patterns (v0.14)
+
+Prefer the lazy readers over loading whole `Account` / `Note` records when
+all you need is one field — they avoid materializing storage maps and
+asset vaults that the WASM frontend will not display anyway.
+
+```rust
+// Account fields without loading the full Account
+let reader = client.account_reader(account_id);
+let (header, status) = reader.header().await?;
+let balance        = reader.get_balance(faucet_id).await?;
+let storage_item   = reader.get_storage_item(slot_name).await?;
+let nonce          = reader.nonce().await?;
+let vault_root     = reader.vault_root().await?;
+let storage_root   = reader.storage_commitment().await?;
+let code_root      = reader.code_commitment().await?;
+
+// Iterator over consumable input notes
+let mut notes = client.input_note_reader(consumer_account_id);
+while let Some(note) = notes.next().await? {
+    // process each InputNoteRecord
+}
+```
+
+Both readers borrow `&self` and may be invoked concurrently with one another.
+They must not be used concurrently with a `Client` write that targets the
+same account, so wrap mixed flows in a serializing layer (the `web-client`
+JS wrapper enforces this with its `_serializeWasmCall` queue).
+
+## State Sync (v0.14)
+
+`Client::sync_state()` takes no arguments — it internally builds a
+`StateSyncInput` from the tracked accounts, note tags, and unspent
+nullifiers, drives a `StateSync`, and applies the resulting update:
+
+```rust
+let summary = client.sync_state().await?;
+```
+
+For custom sync flows (e.g. selective tag sync, advanced foreign-account
+prefetch) the building blocks are public on `Client`:
+
+```rust
+use miden_client::sync::{StateSync, StateSyncInput, StateSyncUpdate};
+
+let mut input: StateSyncInput = client.build_sync_input().await?;
+input.note_tags.insert(extra_tag);
+
+// Drive a StateSync (constructed with the same rpc/store/note-screener
+// the client uses internally), then commit the update via the client.
+let update: StateSyncUpdate = /* state_sync.sync_state(&mut partial_mmr, input).await? */;
+client.apply_state_sync(update).await?;
+```
+
+The exact `StateSync` construction matches `Client::sync_state`'s body in
+`crates/rust-client/src/sync/mod.rs` — copy that wiring rather than
+reinventing it.
 
 ## no_std Compatibility
 

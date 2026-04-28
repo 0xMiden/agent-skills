@@ -1,374 +1,446 @@
 ---
 name: web-client-usage
-description: Conventions for writing JavaScript/TypeScript code that uses the Miden web-client SDK (@miden-sdk/miden-sdk). Use when building apps on Miden, writing integration tests, or calling WebClient methods — covers initialization, transactions, notes, sync ordering, type conversions, and common pitfalls.
+description: Conventions for writing JavaScript/TypeScript code that uses the Miden v0.14 web SDK (`@miden-sdk/miden-sdk`). Use when building apps on Miden, writing integration tests, or calling MidenClient methods — covers initialization, the resource-based API (accounts, transactions, notes, keystore, compile), sync ordering, type conversions, transaction flows, custom contracts, private note transport, and pitfalls.
 ---
 
-# Web-Client SDK Usage Patterns
+# Web SDK Usage Patterns (v0.14)
+
+This skill targets the `@miden-sdk/miden-sdk` npm package as published with the
+[`miden-client`](https://github.com/0xMiden/miden-client) `v0.14.x` release line.
+For React-hook usage, prefer the `react-sdk-patterns` skill — only fall through
+to the raw client when a hook does not cover what you need.
+
+## API Overview
+
+The v0.14 SDK exposes a top-level `MidenClient` whose state is split across
+typed **resources**:
+
+| Resource | What it covers |
+|----------|----------------|
+| `client.accounts` | Wallets, faucets, custom contracts, listing, import/export |
+| `client.transactions` | `send` / `mint` / `consume` / `consumeAll` / `swap` / `execute` / `preview` / `waitFor` |
+| `client.notes` | Listing, fetching, importing/exporting, private-note transport |
+| `client.tags` | Note-tag subscriptions |
+| `client.settings` | Persistent client settings |
+| `client.compile` | Compiling MASM into account components, tx scripts, note scripts |
+| `client.keystore` | Inserting / fetching / removing secret keys |
+
+`MidenClient` is the public surface. The underlying WASM-bound class is still
+exported as `WasmWebClient` (alias for the legacy `WebClient`) for low-level
+operations the resource API does not yet wrap — reach for it via the wrapped
+`#inner` only when you must.
 
 ## Client Initialization
 
-### Basic
+### Convenience constructors (recommended)
 
 ```typescript
-const client = await WebClient.createClient(
-  rpcUrl?,            // "devnet" | "testnet" | "localhost" | URL string
-  noteTransportUrl?,  // for private note streaming
-  seed?,              // Uint8Array (32 bytes) for deterministic key generation
-  network?            // store name — use different values to isolate IndexedDB stores
-);
+import { MidenClient } from "@miden-sdk/miden-sdk";
+
+// Testnet — autoSync on, testnet RPC + prover + note transport
+const client = await MidenClient.createTestnet();
+
+// Devnet equivalent
+const client = await MidenClient.createDevnet();
 ```
 
-All parameters are optional. Omit `rpcUrl` for testnet defaults.
-
-### External Keystore
-
-For HSM or custom key management:
+Both accept the same `ClientOptions` for overrides:
 
 ```typescript
-const client = await WebClient.createClientWithExternalKeystore(
-  rpcUrl, noteTransportUrl, seed, storeName,
-  async (pubKey: Uint8Array) => { /* return secretKey or null */ },
-  async (pubKey: Uint8Array, secretKey: Uint8Array) => { /* store key */ },
-  async (pubKey: Uint8Array, signingInputs: Uint8Array) => { /* return signature */ }
-);
+const client = await MidenClient.createTestnet({
+  storeName: "my-app-tests",      // isolates the IndexedDB store
+  proverUrl: "local",             // prove locally instead of remote
+  autoSync: false,                // disable initial sync
+});
 ```
 
-### Cleanup
+### Generic constructor
 
-Always call `client.terminate()` when done (e.g., on page unload).
+```typescript
+const client = await MidenClient.create({
+  rpcUrl: "https://rpc.testnet.miden.io",  // string URL or "testnet"/"devnet"/"localhost"
+  noteTransportUrl: "https://ntx.testnet.miden.io",
+  storeName: "my-store",
+  seed: new Uint8Array(32),         // optional — deterministic key generation
+  proverUrl: "testnet",             // optional — sets a default prover
+  autoSync: true,                   // optional — call sync() after init
+  keystore: {                       // optional — external HSM/keystore
+    getKey: async (pubKey) => { /* return secretKey or null */ },
+    insertKey: async (pubKey, secretKey) => { /* persist */ },
+    sign: async (pubKey, signingInputs) => { /* return signature */ },
+  },
+});
+```
 
-### Multiple Clients
+If `rpcUrl` is omitted, `create()` delegates to `createTestnet()`.
 
-Multiple clients can share the same store (same `network` value) or use separate stores. Sync operations are coordinated via Web Locks across tabs.
+### Lazy / SSR-safe init
+
+Some bundles (Next.js, Capacitor, raw `/lazy` entry) cannot await WASM at
+import time. Use `MidenClient.ready()` to wait for WASM in-band — it is
+idempotent and shared across callers:
+
+```typescript
+await MidenClient.ready();
+const client = await MidenClient.createTestnet();
+```
+
+### Termination
+
+```typescript
+client.terminate();   // free WASM resources, close the store handle
+```
+
+After `terminate()`, every method throws — guard against late callbacks on
+unmount.
 
 ## Sync — Always Sync First
 
-**Critical:** Call `syncState()` before querying notes, accounts, or building transactions. The client's local state is only as fresh as the last sync.
+The client's view of the chain is only as fresh as its last sync. **Always
+call `sync()` before reading account state or building a transaction that
+depends on freshly received notes.**
 
 ```typescript
-const summary = await client.syncState();
-const blockNum = summary.blockNum();
+const summary = await client.sync();          // returns SyncSummary
+const height  = await client.getSyncHeight(); // current local block number
 ```
 
-Common sync patterns:
+Common patterns:
+
 - Sync before consuming notes (notes must be committed on-chain)
-- Sync after submitting a transaction (to see the result)
-- Sync in a polling loop when waiting for confirmation
+- Sync after submitting a transaction to observe the result
+- Pass `waitForConfirmation: true` to a `transactions.send/mint/consume/swap`
+  call to let the SDK wait for the tx commit instead of polling manually
+- Use `client.waitForIdle()` to flush all queued WASM calls before doing a
+  side-effect that must not race with a kernel callback (e.g. clearing an
+  in-memory unlock token after a wallet "lock")
 
-```typescript
-// Wait for transaction confirmation
-await client.submitNewTransaction(accountId, txRequest);
-let confirmed = false;
-while (!confirmed) {
-  await new Promise(r => setTimeout(r, 3000));
-  await client.syncState();
-  const txs = await client.getTransactions(TransactionFilter.all());
-  confirmed = txs.some(tx => tx.id().toHex() === expectedTxId && tx.transactionStatus().isCommitted());
-}
-```
+`autoSync: true` (default for `createTestnet`/`createDevnet`) only triggers a
+single sync at construction time — it is not a polling loop. Use the React
+SDK's `useSyncState` or `MidenProvider` `autoSyncInterval` for periodic sync.
 
 ## Type Conversions
 
-These are the most common sources of bugs. Follow these rules:
+Type confusion across the WASM boundary is the leading source of bugs.
 
-### AccountId
+### `AccountId`
 
 ```typescript
-// From hex string
-const id = AccountId.fromHex("0xabc123...");
-
-// From bech32 address
+const id = AccountId.fromHex("0xabc123...");          // throws on invalid hex
 const id = Address.fromBech32("mtst1abc...").accountId();
-
-// Back to string
-const hex = id.toString();   // "0x..."
-const hex = id.toHex();      // "0x..."
+const hex = id.toString(); // "0x..."
 ```
 
-Never pass raw strings to methods that expect `AccountId` — always construct the object first.
+Pass `AccountId` (or any account ref the resource accepts: `string` hex,
+`Address`, `Account`, `AccountHeader`) to resource methods — never raw
+strings to methods that ask for `AccountId` directly.
 
-### Amounts — Always BigInt
+`AccountId.fromHex` throws on malformed input in v0.14; wrap in `try/catch`
+when accepting user input.
+
+### Amounts — Always `BigInt`
 
 ```typescript
-// Correct
 BigInt(1000)
+1000n           // numeric literal
 BigInt("1000")
-
-// Wrong — will silently truncate or error
-1000        // number, not bigint
-"1000"      // string, not bigint
 ```
 
-All token amounts in the SDK are `bigint`. When displaying, convert with `.toString()`.
+All token amounts in the SDK are `bigint`. Mixing `number` causes silent
+precision loss above `Number.MAX_SAFE_INTEGER` and `TypeError` below.
 
-### NoteType Enum
+### Visibility & Account Types
 
 ```typescript
-NoteType.Public    // visible on-chain
-NoteType.Private   // encrypted, requires transport
+import { NoteVisibility, AccountType, AuthScheme, StorageMode } from "@miden-sdk/miden-sdk";
+
+NoteVisibility.Public  // "public"
+NoteVisibility.Private // "private"
+
+AccountType.MutableWallet
+AccountType.ImmutableWallet
+AccountType.FungibleFaucet
+AccountType.NonFungibleFaucet
+AccountType.MutableContract
+AccountType.ImmutableContract
+
+AuthScheme.Falcon      // default — Falcon-512 over Poseidon2
+AuthScheme.ECDSA       // EcdsaK256Keccak
+
+StorageMode.Public
+StorageMode.Private
+StorageMode.Network
 ```
 
-Import from the SDK, not as a string. Do not use magic numbers.
+`NoteType` (the v0.13 enum) and `AuthScheme.Falcon512Rpo` are gone — Poseidon2
+is the only Falcon hash in v0.14.
 
-### Note Wrapping
-
-Several wrapper types are needed for transaction building:
+## Account Creation
 
 ```typescript
-// Wrap a Note into an OutputNote
-const outputNote = OutputNote.full(note);
+// Wallet — defaults: mutable, private, Falcon
+const wallet = await client.accounts.create();
 
-// Wrap into arrays for TransactionRequestBuilder
-const outputNoteArray = new OutputNoteArray([outputNote]);
-const noteAndArgs = new NoteAndArgs(note, null);  // null = no custom args
-const noteAndArgsArray = new NoteAndArgsArray([noteAndArgs]);
+// Wallet with explicit options
+const wallet = await client.accounts.create({
+  type: AccountType.MutableWallet,
+  storage: "private",
+  auth: AuthScheme.Falcon,
+});
+
+// Faucet
+const faucet = await client.accounts.create({
+  type: AccountType.FungibleFaucet,
+  storage: "public",
+  symbol: "DAG",
+  decimals: 8,
+  maxSupply: 10_000_000n,
+});
+
+// Custom contract — requires seed and AuthSecretKey
+const component = await client.compile.component({ code: contractMasm, slots: [] });
+const contract = await client.accounts.create({
+  type: AccountType.MutableContract,
+  seed: new Uint8Array(32),
+  auth: secretKey,            // AuthSecretKey, not the AuthScheme enum
+  components: [component],
+});
 ```
 
-### FungibleAsset Construction
+## Transactions
 
-```typescript
-const asset = new FungibleAsset(faucetAccountId, BigInt(amount));
-const noteAssets = new NoteAssets([asset]);
-```
-
-## Transaction Patterns
-
-### Mint
-
-Mints new tokens from a faucet to a target account:
-
-```typescript
-const txRequest = client.newMintTransactionRequest(
-  targetAccountId,       // AccountId — who receives tokens
-  faucetAccountId,       // AccountId — the faucet minting
-  NoteType.Public,       // note visibility
-  BigInt(1000)           // amount
-);
-await client.submitNewTransaction(faucetAccountId, txRequest);
-```
-
-Note: The transaction is submitted **from the faucet account**, not the target.
+The v0.14 transactions API is option-bag-based and accepts any account ref
+(`Account`, `AccountHeader`, hex string, `AccountId`).
 
 ### Send
 
-Sends tokens from one account to another:
-
 ```typescript
-const txRequest = client.newSendTransactionRequest(
-  senderAccountId,       // AccountId
-  targetAccountId,       // AccountId
-  faucetAccountId,       // AccountId — identifies the token/asset
-  NoteType.Public,       // or NoteType.Private
-  BigInt(100),           // amount
-  null,                  // recallHeight — pass null if not needed
-  null                   // timelockHeight — pass null if not needed
-);
-await client.submitNewTransaction(senderAccountId, txRequest);
+const { txId } = await client.transactions.send({
+  account: wallet,                 // sender
+  to: "0xrecipient...",            // any account ref
+  token: faucet,                   // faucet account ref — identifies the asset
+  amount: 100n,
+  type: NoteVisibility.Public,     // optional, defaults to "private"
+  reclaimAfter: 100,               // optional — sender can reclaim after this block
+  timelockUntil: 50,               // optional — recipient can consume after this block
+  waitForConfirmation: true,
+  timeout: 30_000,
+});
 ```
 
-**Private sends require an extra step** — send the note data to the recipient:
+For private sends where you also need to deliver the note out-of-band, set
+`returnNote: true` and the call returns the constructed `Note` object —
+incompatible with `reclaimAfter`/`timelockUntil`.
 
 ```typescript
-const txResult = await client.executeTransaction(senderAccountId, txRequest);
-const provenTx = await client.proveTransaction(txResult, prover);
-const height = await client.submitProvenTransaction(provenTx, txResult);
-await client.applyTransaction(txResult, height);
+const { txId, note } = await client.transactions.send({
+  account: wallet,
+  to: recipientAddress,
+  token: faucet,
+  amount: 100n,
+  type: NoteVisibility.Private,
+  returnNote: true,
+});
 
-// Extract the full note and send via transport
-const fullNote = txResult.executedTransaction().outputNotes().notes()[0].intoFull();
-const recipientAddress = Address.fromBech32("mtst1recipient...");
-await client.sendPrivateNote(fullNote, recipientAddress);
+// Stream the note via the note-transport service
+await client.notes.sendPrivate({ note, to: Address.fromBech32("mtst1...") });
 ```
+
+### Mint
+
+```typescript
+const { txId } = await client.transactions.mint({
+  account: faucet,                 // faucet executes the mint
+  to: targetAccountId,             // recipient
+  amount: 1000n,
+  type: NoteVisibility.Public,
+  waitForConfirmation: true,
+});
+```
+
+The transaction executes on the **faucet** — a frequent v0.13 → v0.14 bug is
+passing the recipient as `account`.
 
 ### Consume
 
-Consumes notes received by an account:
-
 ```typescript
-// First: get consumable notes
-const consumableNotes = await client.getConsumableNotes(accountId);
+// Specific notes
+await client.transactions.consume({
+  account: wallet,
+  notes: [noteId1, noteRecord, "0xnote..."],   // any of: hex, NoteId, InputNoteRecord, Note
+  waitForConfirmation: true,
+});
 
-// Extract the Note objects
-const notes = consumableNotes.map(record => record.inputNoteRecord().toNote());
-
-// Build consume request
-const txRequest = client.newConsumeTransactionRequest(notes);
-await client.submitNewTransaction(accountId, txRequest);
+// Drain everything consumable for the account
+const { txId, consumed, remaining } = await client.transactions.consumeAll({
+  account: wallet,
+  maxNotes: 50,                    // optional cap
+});
 ```
 
 ### Swap
 
-Atomic exchange between two assets:
-
 ```typescript
-const txRequest = client.newSwapTransactionRequest(
-  accountId,             // AccountId — initiator
-  offeredFaucetId,       // AccountId — asset being offered
-  BigInt(100),           // offered amount
-  requestedFaucetId,     // AccountId — asset being requested
-  BigInt(50),            // requested amount
-  NoteType.Public,       // swap note type
-  NoteType.Private       // payback note type
-);
-await client.submitNewTransaction(accountId, txRequest);
+await client.transactions.swap({
+  account: wallet,
+  offered: { token: tokenA, amount: 100n },
+  requested: { token: tokenB, amount: 50n },
+  type: NoteVisibility.Public,            // swap-note visibility
+  paybackType: NoteVisibility.Private,    // payback-note visibility
+});
 ```
 
-### Custom Transactions (TransactionRequestBuilder)
-
-For advanced use cases:
+### Execute (custom scripts)
 
 ```typescript
-// Create a P2ID note manually
-const note = Note.createP2IDNote(
-  senderId,
-  receiverId,
-  new NoteAssets([new FungibleAsset(faucetId, BigInt(100))]),
-  NoteType.Public,
-  new Felt(0n)           // aux data
-);
+const script = await client.compile.txScript({
+  code: scriptMasm,
+  libraries: [{ namespace: "my::lib", code: libMasm, linking: "dynamic" }],
+});
 
-const txRequest = new TransactionRequestBuilder()
-  .withOwnOutputNotes(new OutputNoteArray([OutputNote.full(note)]))
-  .build();
-
-await client.submitNewTransaction(senderId, txRequest);
+await client.transactions.execute({
+  account: contract,
+  script,
+  foreignAccounts: [
+    publicAccountId,                    // public — auto-fetched via RPC
+    { id: privateContractId, storage: storageRequirements },
+  ],
+  waitForConfirmation: true,
+});
 ```
 
-## Transaction Execution Pipeline
+In v0.14, **public foreign accounts are auto-fetched** during execution — only
+private foreign accounts must be supplied with their storage requirements.
 
-Two approaches:
+### Preview (dry run)
 
-### Simplified (one call)
+`transactions.preview({ operation: "send" | "mint" | "consume" | "swap" | "custom", ... })`
+runs the same kernel as the real call but without proving or submitting,
+returning a summary suitable for UI confirmation screens.
+
+## Notes
 
 ```typescript
-await client.submitNewTransaction(accountId, txRequest);
-// or with custom prover:
-await client.submitNewTransactionWithProver(accountId, txRequest, prover);
+await client.notes.list();                            // all input notes
+await client.notes.list({ status: "committed" });     // filter
+await client.notes.get(noteId);                       // single record
+await client.notes.listSent();                        // output notes
+await client.notes.listAvailable({ account: wallet });// consumable for an account
+
+// Import/export
+await client.notes.import(noteFile);
+const file = await client.notes.export(noteId);
+
+// Private-note transport
+await client.notes.fetchPrivate();                    // pulls anything addressed to tracked accounts
+await client.notes.sendPrivate({ note, to: addr });   // delivers via the transport service
 ```
 
-### Full control (four steps)
+## Accounts (querying)
 
 ```typescript
-const txResult = await client.executeTransaction(accountId, txRequest);
-const provenTx = await client.proveTransaction(txResult, prover);
-const height = await client.submitProvenTransaction(provenTx, txResult);
-await client.applyTransaction(txResult, height);
+await client.accounts.list();                         // tracked accounts
+await client.accounts.get(ref);                       // single (returns null if not tracked)
+await client.accounts.getOrImport(ref);               // tries get(), falls back to import()
+await client.accounts.getDetails(ref);                // header + status + vault summary
+await client.accounts.insert({ account, overwrite }); // start tracking an existing account
 ```
 
-Use the 4-step pipeline when you need to:
-- Extract output notes before submitting (private sends)
-- Use a custom/remote prover
-- Inspect the transaction result before committing
+For balance reads in v0.14 you can either use `getDetails` or, if you need a
+single asset balance without loading the full vault, drop into the underlying
+WASM client's `accountReader(id)` lazy reader.
 
-## Querying
-
-### Accounts
+## Keystore
 
 ```typescript
-// List all tracked accounts
-const accounts = await client.getAccounts();
-
-// Get specific account
-const account = await client.getAccount(accountId);
-
-// Account properties
-account.id().toString();
-account.vault().getBalance(faucetId);   // bigint
-account.vault().fungibleAssets();        // array
-account.storage().commitment().toHex();
-account.code().commitment().toHex();
+await client.keystore.insert(accountId, secretKey);
+await client.keystore.get(pubKeyCommitment);
+await client.keystore.remove(pubKeyCommitment);
+await client.keystore.getCommitments(accountId);
+await client.keystore.getAccountId(pubKeyCommitment);
 ```
 
-### Notes
+`keystore.insert` is the single call that both stores the key and registers
+its commitment with the account — the v0.13 split between
+`addAccountSecretKeyToWebStore` + `register_account_public_key_commitments` is
+gone.
+
+## Compile
 
 ```typescript
-// Consumable notes for an account
-const notes = await client.getConsumableNotes(accountId);
-
-// All input notes (with filter)
-const allNotes = await client.getInputNotes(NoteFilter.all());
-const committed = await client.getInputNotes(
-  new NoteFilter(NoteFilterTypes.Committed, undefined)
-);
-const specific = await client.getInputNotes(
-  new NoteFilter(NoteFilterTypes.List, [noteId1, noteId2])
-);
-
-// Single note
-const noteRecord = await client.getInputNote(noteId);
+await client.compile.component({ code, slots, supportAllTypes: true });
+await client.compile.txScript({ code, libraries });
+await client.compile.noteScript({ code, libraries });
 ```
 
-### Transactions
-
-```typescript
-const allTxs = await client.getTransactions(TransactionFilter.all());
-const pending = await client.getTransactions(TransactionFilter.uncommitted());
-const specific = await client.getTransactions(TransactionFilter.ids([txId]));
-
-// Transaction status
-tx.transactionStatus().isPending();
-tx.transactionStatus().isCommitted();
-tx.transactionStatus().isDiscarded();
-```
-
-## Import/Export
-
-```typescript
-// Export full store
-const storeData = await client.exportStore();
-
-// Import store
-await client.forceImportStore(storeData, "StoreName");
-
-// Export/import individual accounts
-const accountFile = await client.exportAccountFile(accountId);
-const bytes = Array.from(accountFile.serialize());
-// ... later:
-const file = AccountFile.deserialize(new Uint8Array(bytes));
-await client.importAccountFile(file);
-
-// Import account by ID (from network)
-await client.importAccountById(accountId);
-```
+Note scripts in v0.14 are **MASM libraries with a single `@note_script`-annotated
+procedure**, not begin/end programs — `client.compile.noteScript` builds the
+correct shape from a procedure body. The same applies to `@auth_script` for
+authentication scripts.
 
 ## Common Workflows
 
-### Mint and Consume (fund an account)
+### Mint and consume (fund a fresh wallet)
 
 ```typescript
-// 1. Mint from faucet to target
-const mintTx = client.newMintTransactionRequest(
-  targetId, faucetId, NoteType.Public, BigInt(1000)
-);
-await client.submitNewTransaction(faucetId, mintTx);
+const wallet = await client.accounts.create();
+const faucet = await client.accounts.create({
+  type: AccountType.FungibleFaucet,
+  storage: "public",
+  symbol: "TEST",
+  decimals: 8,
+  maxSupply: 1_000_000n,
+});
 
-// 2. Wait for block
-await new Promise(r => setTimeout(r, 5000));
-await client.syncState();
+await client.transactions.mint({
+  account: faucet,
+  to: wallet,
+  amount: 10_000n,
+  type: NoteVisibility.Public,
+  waitForConfirmation: true,
+});
 
-// 3. Get and consume the minted notes
-const notes = await client.getConsumableNotes(targetId);
-const noteObjects = notes.map(n => n.inputNoteRecord().toNote());
-const consumeTx = client.newConsumeTransactionRequest(noteObjects);
-await client.submitNewTransaction(targetId, consumeTx);
+await client.sync();
+await client.transactions.consumeAll({
+  account: wallet,
+  waitForConfirmation: true,
+});
 ```
 
-### Check Balance
+### Wait for an external transfer
 
 ```typescript
-await client.syncState();
-const account = await client.getAccount(accountId);
-const balance = account.vault().getBalance(faucetId);
-console.log(`Balance: ${balance}`);
+await client.sync();
+const before = (await client.notes.listAvailable({ account: wallet })).length;
+
+while (true) {
+  await new Promise(r => setTimeout(r, 3000));
+  await client.sync();
+  const now = (await client.notes.listAvailable({ account: wallet })).length;
+  if (now > before) break;
+}
 ```
 
 ## Common Pitfalls
 
-1. **Forgetting to sync** — Notes won't appear, balances will be stale
-2. **Using `number` instead of `BigInt`** for amounts — silent precision loss
-3. **Passing strings where AccountId is expected** — construct with `AccountId.fromHex()`
-4. **Consuming notes before they're committed** — sync first, check status
-5. **Submitting mint from target instead of faucet** — mint tx executes on the faucet account
-6. **Private notes without transport** — must call `sendPrivateNote()` after execute
-7. **Not wrapping notes** — `OutputNote.full(note)` and array wrappers are required for builder
-8. **Race conditions** — use `AsyncLock.runExclusive()` when multiple operations share the client
+1. **Forgetting to sync.** Notes won't appear, balances will be stale, foreign
+   accounts will be at the wrong block.
+2. **`number` instead of `BigInt`** for amounts — silent precision loss.
+3. **Passing strings where the SDK expects an account ref** — pre-parse with
+   `AccountId.fromHex()` (and catch its throw).
+4. **Consuming notes before they're committed** — sync first, check status.
+5. **Submitting `mint` with the recipient as `account`** — mint executes on
+   the faucet account, not the target.
+6. **Private notes without transport** — must call `notes.sendPrivate()` (or
+   pass `returnNote: true` to `transactions.send` and deliver out-of-band).
+7. **Using v0.13 names** — `WebClient` is now `MidenClient`,
+   `client.syncState()` is `client.sync()`, `client.getConsumableNotes()` is
+   `client.notes.listAvailable()`, `NoteType` is `NoteVisibility`,
+   `AuthScheme.Falcon512Rpo` is `AuthScheme.Falcon` (Poseidon2 hash).
+8. **Holding WASM-owned objects across `terminate()`** — every `Account`,
+   `Note`, `AccountId`, `NoteAndArgsArray` etc. owns Rust memory through the
+   WASM ArrayBuffer. After `terminate()` they panic with "null pointer
+   passed to rust" — drop references on unmount.
+9. **Calling `accountReader(...)` in parallel with a write** — the readers
+   share the WASM client. Wrap concurrent flows with `client.waitForIdle()`
+   or rely on the React SDK's `runExclusive`.
