@@ -14,6 +14,43 @@ Padding requirements differ based on procedure invocation type:
 | `call`     | Explicit padding in comments | Exactly 16 |
 | `exec`     | No explicit padding | No requirement |
 
+## Stack Depth Floor: 16
+
+Miden VM enforces a minimum operand-stack depth of 16 elements (`MIN_STACK_DEPTH = 16` in the VM core). When an operation would naively shrink the stack below 16, the VM auto-fills the missing positions with zeros via the overflow-table mechanism. The actual depth stays exactly 16; only the visible content shrinks.
+
+This invariant applies at the entry boundary of:
+
+- `call` procedures,
+- note scripts and transaction scripts (entered via `dyncall` at depth 16).
+
+It does NOT apply to mid-chain `exec` procedures, which share the caller's stack and can drop the visible count below 16 by consuming caller elements (see Danger Zone).
+
+### Tracking the floor in inline comments
+
+When the naive math would put the stack below 16, the `# =>` tracker must reflect the actual auto-padded depth, not the naive count.
+
+```masm
+# entry at depth 16: [VALUE, pad(12)]
+dropw
+# => [pad(16)]   # correct: VALUE replaced with zeros, depth still 16
+```
+
+Not:
+
+```masm
+# => [pad(12)]   # wrong: depth is still 16, only the visible content shrank
+```
+
+This shows up most often at the start of note scripts that don't use their input arguments:
+
+```masm
+begin
+    dropw
+    # => [pad(16)]
+    ...
+end
+```
+
 ## Call Procedures
 
 Procedures invoked with `call` must have explicit padding in:
@@ -43,10 +80,6 @@ exec.native_account::set_item
 dropw
 # => [pad(16)] auto-padded to 16 elements    
 ```
-
-### Auto-Padding Behavior
-
-If the stack falls below 16 elements for a `call` procedure, Miden auto-pads to 16. This is acceptable and should be documented in the output as the padded result.
 
 ## Exec Procedures
 
@@ -89,7 +122,31 @@ Inside a procedure, the stack may temporarily exceed 16 elements:
 
 These extra elements must be explicitly dropped before the procedure returns (directly or via called procedures).
 
+## Debugging Stack Depth
+
+When unsure whether the stack matches the depth you expect, use the assembly's debug instructions to inspect it at runtime. These cost zero VM cycles, do not affect the program hash, and are stripped at compile time when the assembler is not in debug mode.
+
+- `debug.stack` – print the full operand stack.
+- `debug.stack.N` – print only the top N elements (1 ≤ N < 256).
+- `sdepth` – push the current stack depth onto the stack as a felt; useful when you need depth as a runtime value, e.g. to assert it:
+
+  ```masm
+  sdepth push.16 eq assert.err="depth must be 16 here"
+  ```
+
+Run with the `--debug` flag to see output:
+
+```bash
+miden-vm run program.masm --debug
+```
+
+Without `--debug`, debug instructions are silently removed. Remove or comment out `debug.*` lines before committing production MASM.
+
 ## Validation Checklist
+
+For all invocation types:
+- [ ] Inline `# =>` trackers reflect the post-auto-pad depth (never below 16) at boundaries that enforce the floor (`call`, note scripts, tx scripts)
+- [ ] No `debug.*` instruction is left in production MASM
 
 For `call` procedures:
 - [ ] Inputs doc comment shows exactly 16 elements with `pad(N)`

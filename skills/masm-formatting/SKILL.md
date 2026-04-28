@@ -31,6 +31,8 @@ The conventions below are derived from canonical MASM in [protocol](https://gith
 
 Composite items always use `are` in `Where:` since they name a group of felts, per `masm-doc-comments`. Brace spacing and part order are inconsistent in source: both `{suffix,prefix}` and `{suffix, prefix}` (with a space) appear, and both `{suffix,prefix}` (suffix-first, the more common form in protocol procs) and `{prefix,suffix}` (prefix-first) appear, sometimes within the same file. Match the surrounding file; do not reformat existing braces.
 
+Use `EMPTY_WORD` to denote the all-zero Word `[0, 0, 0, 0]` in stack trackers, `Where:` bullets, and prose comments (e.g. `# => [..., EMPTY_WORD, ...]`). It is a naming convention used in protocol-style code, not a defined constant in source; the point is to convey *meaning* (absence of data) rather than the literal numeric value.
+
 Canonical references in [protocol](https://github.com/0xMiden/protocol): `crates/miden-protocol/asm/protocol/faucet.masm`, `native_account.masm`, `asset.masm`, `active_note.masm`, `active_account.masm`.
 
 ## 2. Stack span notation: the `(N)` family
