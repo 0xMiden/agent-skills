@@ -31,10 +31,10 @@ Skills are applied automatically when the agent detects relevant tasks. Each ski
 
 ### Miden Client (Web SDK & Internals)
 
-- **rust-client-patterns** – Rust conventions for the `miden-client` crate: error handling (`thiserror` + `ErrorHint`), `Store` trait (adding methods across `SqliteStore`/`WebStore` with cross-platform `async_trait`), `Client<AUTH>` generic pattern with the v14 `Keystore` super-trait, `no_std` imports (`alloc::`/`core::`), `ClientBuilder` network constructors (`for_testnet()`, `for_devnet()`, `for_localhost()`), and section header formatting (`// ===` top-level, `// ---` subsections)
+- **rust-client-patterns** – Rust conventions for the `miden-client` crate: error handling (`thiserror` + `ErrorHint`), `Store` trait (adding methods across `SqliteStore`/`WebStore` with cross-platform `async_trait`), `Client<AUTH>` generic pattern with the `Keystore` super-trait, `no_std` imports (`alloc::`/`core::`), `ClientBuilder` network constructors (`for_testnet()`, `for_devnet()`, `for_localhost()`), and section header formatting (`// ===` top-level, `// ---` subsections)
 - **wasm-bridge** – Rust↔JS WASM boundary conventions for the `web-client` crate: `#[wasm_bindgen]` method exposure with `js_name`, newtype wrappers with `From` conversions, `js_error_with_context` error chaining with `ErrorHint`, promise handling (`await_js`/`await_ok`/`await_js_value`), data transfer objects with `getter_with_clone`, JS function imports, and the `MidenClient`/`WasmWebClient` (`WebClient`) two-layer JS API
 - **idxdb-patterns** – IndexedDB/Dexie persistence conventions for the `idxdb-store` crate: Dexie transactions (`db.dexie.transaction("rw", tables, ...)`), schema interfaces (`IAccount`, `IAccountCode`), database registry (`getDatabase`/`openDatabase`), `logWebStoreError` error handling, forward-only state updates, and the TS→JS dual-commit build workflow
-- **web-client-usage** – Developer-facing patterns for using the `@miden-sdk/miden-sdk` npm package on Miden v0.14: `MidenClient.create()` initialization, the resource-based API (`client.accounts`, `client.transactions`, `client.notes`, `client.tags`, `client.settings`, `client.compile`, `client.keystore`), sync ordering, type conversions (`AccountId.fromHex`, `BigInt` amounts, `NoteVisibility`), transaction flows (mint, send, consume, swap, custom contracts), private note transport, querying, import/export, and pitfall avoidance
+- **web-client-usage** – Developer-facing patterns for using the `@miden-sdk/miden-sdk` npm package: `MidenClient.create()` initialization, the resource-based API (`client.accounts`, `client.transactions`, `client.notes`, `client.tags`, `client.settings`, `client.compile`, `client.keystore`), sync ordering, type conversions (`AccountId.fromHex`, `BigInt` amounts, `NoteVisibility`), transaction flows (mint, send, consume, swap, custom contracts), private note transport, querying, import/export, and pitfall avoidance
 
 ## Commands
 
@@ -114,8 +114,8 @@ Findings are graded by severity: `[CRITICAL]` (loss of funds / key compromise), 
 **Example:**
 ```
 /tdd-cycle user authentication middleware
-/tdd-cycle P2idNote::create factory method
-/tdd-cycle MidenClient.create() options parsing
+/tdd-cycle OutputNote.p2id() factory method
+/tdd-cycle WebClient.create() options parsing
 ```
 
 **What it does:** Executes a full Test-Driven Development workflow with strict red-green-refactor discipline across six phases:

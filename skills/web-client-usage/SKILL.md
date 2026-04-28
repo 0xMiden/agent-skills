@@ -1,19 +1,19 @@
 ---
 name: web-client-usage
-description: Conventions for writing JavaScript/TypeScript code that uses the Miden v0.14 web SDK (`@miden-sdk/miden-sdk`). Use when building apps on Miden, writing integration tests, or calling MidenClient methods — covers initialization, the resource-based API (accounts, transactions, notes, keystore, compile), sync ordering, type conversions, transaction flows, custom contracts, private note transport, and pitfalls.
+description: Conventions for writing JavaScript/TypeScript code that uses the Miden web SDK (`@miden-sdk/miden-sdk`). Use when building apps on Miden, writing integration tests, or calling MidenClient methods — covers initialization, the resource-based API (accounts, transactions, notes, keystore, compile), sync ordering, type conversions, transaction flows, custom contracts, private note transport, and pitfalls.
 ---
 
-# Web SDK Usage Patterns (v0.14)
+# Web SDK Usage Patterns
 
-This skill targets the `@miden-sdk/miden-sdk` npm package as published with the
-[`miden-client`](https://github.com/0xMiden/miden-client) `v0.14.x` release line.
-For React-hook usage, prefer the `react-sdk-patterns` skill — only fall through
+This skill targets the `@miden-sdk/miden-sdk` npm package shipped from
+[`0xMiden/miden-client`](https://github.com/0xMiden/miden-client). For
+React-hook usage, prefer the `react-sdk-patterns` skill — only fall through
 to the raw client when a hook does not cover what you need.
 
 ## API Overview
 
-The v0.14 SDK exposes a top-level `MidenClient` whose state is split across
-typed **resources**:
+The SDK exposes a top-level `MidenClient` whose state is split across typed
+**resources**:
 
 | Resource | What it covers |
 |----------|----------------|
@@ -135,8 +135,8 @@ Pass `AccountId` (or any account ref the resource accepts: `string` hex,
 `Address`, `Account`, `AccountHeader`) to resource methods — never raw
 strings to methods that ask for `AccountId` directly.
 
-`AccountId.fromHex` throws on malformed input in v0.14; wrap in `try/catch`
-when accepting user input.
+`AccountId.fromHex` throws on malformed input; wrap in `try/catch` when
+accepting user input.
 
 ### Amounts — Always `BigInt`
 
@@ -172,8 +172,8 @@ StorageMode.Private
 StorageMode.Network
 ```
 
-`NoteType` (the v0.13 enum) and `AuthScheme.Falcon512Rpo` are gone — Poseidon2
-is the only Falcon hash in v0.14.
+Use `NoteVisibility` (not the legacy `NoteType` enum) and `AuthScheme.Falcon`
+for the Poseidon2-based Falcon-512 scheme.
 
 ## Account Creation
 
@@ -209,7 +209,7 @@ const contract = await client.accounts.create({
 
 ## Transactions
 
-The v0.14 transactions API is option-bag-based and accepts any account ref
+The transactions API is option-bag-based and accepts any account ref
 (`Account`, `AccountHeader`, hex string, `AccountId`).
 
 ### Send
@@ -258,8 +258,8 @@ const { txId } = await client.transactions.mint({
 });
 ```
 
-The transaction executes on the **faucet** — a frequent v0.13 → v0.14 bug is
-passing the recipient as `account`.
+The transaction executes on the **faucet** — a frequent bug is passing the
+recipient as `account`.
 
 ### Consume
 
@@ -309,8 +309,8 @@ await client.transactions.execute({
 });
 ```
 
-In v0.14, **public foreign accounts are auto-fetched** during execution — only
-private foreign accounts must be supplied with their storage requirements.
+**Public foreign accounts are auto-fetched** during execution — only private
+foreign accounts must be supplied with their storage requirements.
 
 ### Preview (dry run)
 
@@ -346,9 +346,9 @@ await client.accounts.getDetails(ref);                // header + status + vault
 await client.accounts.insert({ account, overwrite }); // start tracking an existing account
 ```
 
-For balance reads in v0.14 you can either use `getDetails` or, if you need a
-single asset balance without loading the full vault, drop into the underlying
-WASM client's `accountReader(id)` lazy reader.
+For balance reads, use `getDetails` or — if you need a single asset balance
+without loading the full vault — drop into the underlying WASM client's
+`accountReader(id)` lazy reader.
 
 ## Keystore
 
@@ -361,9 +361,7 @@ await client.keystore.getAccountId(pubKeyCommitment);
 ```
 
 `keystore.insert` is the single call that both stores the key and registers
-its commitment with the account — the v0.13 split between
-`addAccountSecretKeyToWebStore` + `register_account_public_key_commitments` is
-gone.
+its commitment with the account.
 
 ## Compile
 
@@ -373,7 +371,7 @@ await client.compile.txScript({ code, libraries });
 await client.compile.noteScript({ code, libraries });
 ```
 
-Note scripts in v0.14 are **MASM libraries with a single `@note_script`-annotated
+Note scripts are **MASM libraries with a single `@note_script`-annotated
 procedure**, not begin/end programs — `client.compile.noteScript` builds the
 correct shape from a procedure body. The same applies to `@auth_script` for
 authentication scripts.
@@ -433,14 +431,10 @@ while (true) {
    the faucet account, not the target.
 6. **Private notes without transport** — must call `notes.sendPrivate()` (or
    pass `returnNote: true` to `transactions.send` and deliver out-of-band).
-7. **Using v0.13 names** — `WebClient` is now `MidenClient`,
-   `client.syncState()` is `client.sync()`, `client.getConsumableNotes()` is
-   `client.notes.listAvailable()`, `NoteType` is `NoteVisibility`,
-   `AuthScheme.Falcon512Rpo` is `AuthScheme.Falcon` (Poseidon2 hash).
-8. **Holding WASM-owned objects across `terminate()`** — every `Account`,
+7. **Holding WASM-owned objects across `terminate()`** — every `Account`,
    `Note`, `AccountId`, `NoteAndArgsArray` etc. owns Rust memory through the
    WASM ArrayBuffer. After `terminate()` they panic with "null pointer
    passed to rust" — drop references on unmount.
-9. **Calling `accountReader(...)` in parallel with a write** — the readers
+8. **Calling `accountReader(...)` in parallel with a write** — the readers
    share the WASM client. Wrap concurrent flows with `client.waitForIdle()`
    or rely on the React SDK's `runExclusive`.

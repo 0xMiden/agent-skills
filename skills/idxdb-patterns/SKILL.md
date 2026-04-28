@@ -1,19 +1,18 @@
 ---
 name: idxdb-patterns
-description: Enforce conventions for the IndexedDB/Dexie persistence layer in miden-client v0.14 (idxdb-store crate). Use when editing TypeScript or JavaScript in `crates/idxdb-store/src/ts/` or `crates/idxdb-store/src/js/`, writing Dexie transactions, or modifying the database schema.
+description: Enforce conventions for the IndexedDB/Dexie persistence layer in miden-client (idxdb-store crate). Use when editing TypeScript or JavaScript in `crates/idxdb-store/src/ts/` or `crates/idxdb-store/src/js/`, writing Dexie transactions, or modifying the database schema.
 ---
 
-# IndexedDB Store Patterns (idxdb-store, v0.14)
+# IndexedDB Store Patterns (idxdb-store)
 
-The v0.14 schema splits account-related tables into `Latest…` /
-`Historical…` pairs to support the new account-history pruning feature
-(`client.pruneAccountHistory()`). Always check
-`crates/idxdb-store/src/ts/schema.ts` for the canonical table list before
-adding rows or filters — the table set has grown
-(`AccountAuth`, `AccountKeyMapping`, `Addresses`, `Settings`,
-`ForeignAccountCode`, `NotesScripts`, `TransactionScripts`,
-`PartialBlockchainNodes`, `LatestStorageMapEntries`,
-`HistoricalStorageMapEntries`, …) since v0.13.
+The schema splits account-related tables into `Latest…` / `Historical…`
+pairs to support account-history pruning (`client.pruneAccountHistory()`).
+Always check `crates/idxdb-store/src/ts/schema.ts` for the canonical table
+list before adding rows or filters — the active set includes `AccountAuth`,
+`AccountKeyMapping`, `Addresses`, `Settings`, `ForeignAccountCode`,
+`NotesScripts`, `TransactionScripts`, `PartialBlockchainNodes`,
+`LatestStorageMapEntries`, `HistoricalStorageMapEntries`, plus the
+account/asset latest/historical pairs.
 
 ## Build Workflow
 
@@ -96,7 +95,7 @@ export interface IHistoricalAccountStorage {
 
 export interface ILatestAccountAsset {
   accountId: string;
-  vaultKey: string;     // ASSET_KEY in v0.14 — see `miden-concepts` skill
+  vaultKey: string;     // ASSET_KEY — see `miden-concepts` skill
   asset: string;        // ASSET_VALUE serialized
 }
 
@@ -114,9 +113,9 @@ Rules:
 - Use `?` suffix for optional fields, `| null` when the column explicitly
   represents the absence of a previous value (replaced-from in history)
 - Use `boolean` for flags, `number` for block heights and slot types
-- The asset layer in v0.14 is two-word: `vaultKey` is the `ASSET_KEY` and
-  `asset` is the encoded `ASSET_VALUE`. Don't try to fold them back into a
-  single hex string.
+- The asset layer is two-word: `vaultKey` is the `ASSET_KEY` and `asset` is
+  the encoded `ASSET_VALUE`. Don't try to fold them back into a single hex
+  string.
 
 ## Table Enum
 

@@ -1,9 +1,9 @@
 ---
 name: wasm-bridge
-description: Enforce conventions for the Rust↔JavaScript WASM boundary in miden-client v0.14 (web-client crate). Use when exposing Rust methods to JS via wasm_bindgen, creating newtype wrappers, handling errors across the boundary, bridging JS Promises to Rust Futures, or layering the public `MidenClient` resource API on top of the WASM-bound `WebClient`.
+description: Enforce conventions for the Rust↔JavaScript WASM boundary in miden-client (web-client crate). Use when exposing Rust methods to JS via wasm_bindgen, creating newtype wrappers, handling errors across the boundary, bridging JS Promises to Rust Futures, or layering the public `MidenClient` resource API on top of the WASM-bound `WebClient`.
 ---
 
-# WASM Bridge Patterns (web-client, v0.14)
+# WASM Bridge Patterns (web-client)
 
 ## Exposing Rust Methods to JavaScript
 

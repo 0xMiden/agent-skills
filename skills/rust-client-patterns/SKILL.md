@@ -1,14 +1,15 @@
 ---
 name: rust-client-patterns
-description: Enforce coding conventions for the miden-client v0.14 Rust codebase (rust-client, sqlite-store, idxdb-store, web-client). Use when editing, reviewing, or creating Rust code in the miden-client workspace — covers error handling, Store trait methods, the Client<AUTH> generic and v0.14 Keystore super-trait, builder constructors, lazy reader patterns, and `no_std` organization.
+description: Enforce coding conventions for the miden-client Rust codebase (rust-client, sqlite-store, idxdb-store, web-client). Use when editing, reviewing, or creating Rust code in the miden-client workspace — covers error handling, Store trait methods, the Client<AUTH> generic and Keystore super-trait, builder constructors, lazy reader patterns, and `no_std` organization.
 ---
 
-# Miden Client Rust Patterns (v0.14)
+# Miden Client Rust Patterns
 
 The crate ships under `crates/rust-client` with companion crates for each
 backend (`crates/sqlite-store`, `crates/idxdb-store`, `crates/web-client`).
-v0.14 minimum supported Rust version is **1.93** — pin
-`rust-toolchain.toml` to `channel = "1.93"`.
+The MSRV tracks `rust-toolchain.toml` in the upstream `miden-client`
+repository — copy that channel into the consumer's toolchain file rather
+than hard-coding a number that drifts.
 
 ## Section Headers
 
@@ -173,7 +174,7 @@ Rules:
 
 Apply the AUTH constraint per impl block, not on the struct. Methods that
 sign transactions need at least the [`TransactionAuthenticator`] trait;
-methods that manage stored secret keys need the v0.14
+methods that manage stored secret keys need the
 [`Keystore`](super-trait of `TransactionAuthenticator`):
 
 ```rust
@@ -200,7 +201,7 @@ impl<AUTH> Client<AUTH> {
 }
 ```
 
-### v0.14 `Keystore` super-trait
+### `Keystore` super-trait
 
 `Keystore` (in `miden_client::keystore`) extends `TransactionAuthenticator`
 and adds the unified key-management surface:
@@ -221,9 +222,10 @@ pub trait Keystore: TransactionAuthenticator {
 }
 ```
 
-The pre-v0.14 `keystore.insert_key` + `client.register_account_public_key_commitments`
-split is gone — call `keystore.add_key(&secret, account_id)` once.
-`FilesystemKeyStore` (native) and `WebKeyStore` (WASM) both impl `Keystore`.
+A single `keystore.add_key(&secret, account_id)` call both stores the key
+and registers its commitment with the account — there is no separate
+"insert key" + "register commitment" step. `FilesystemKeyStore` (native)
+and `WebKeyStore` (WASM) both impl `Keystore`.
 
 ### Builder Pattern
 
@@ -252,7 +254,7 @@ let client = ClientBuilder::for_testnet()
     .await?;
 ```
 
-## Lazy Reader Patterns (v0.14)
+## Lazy Reader Patterns
 
 Prefer the lazy readers over loading whole `Account` / `Note` records when
 all you need is one field — they avoid materializing storage maps and
@@ -281,7 +283,7 @@ They must not be used concurrently with a `Client` write that targets the
 same account, so wrap mixed flows in a serializing layer (the `web-client`
 JS wrapper enforces this with its `_serializeWasmCall` queue).
 
-## State Sync (v0.14)
+## State Sync
 
 `Client::sync_state()` takes no arguments — it internally builds a
 `StateSyncInput` from the tracked accounts, note tags, and unspent
