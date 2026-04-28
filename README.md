@@ -6,19 +6,35 @@ Skills and commands for AI agents when working with the Miden ecosystem.
 
 Skills are applied automatically when the agent detects relevant tasks. Each skill is a `SKILL.md` file in a named directory under `skills/`.
 
+### Rust SDK (Smart Contract Development)
+
+- **rust-sdk-patterns** – Complete guide to `#[component]`, `#[note]`, `#[tx_script]` macros, storage patterns, native functions, asset handling, and cross-component calls
+- **rust-sdk-testing-patterns** – MockChain testing workflow, account/note creation, storage verification, and multi-step test patterns
+- **miden-concepts** – Miden architecture from a developer perspective: actor model, accounts, notes, transactions, assets, privacy
+- **rust-sdk-pitfalls** – Critical safety rules: felt arithmetic, comparison operators, stack limits, argument limits, storage naming, no-std
+- **rust-sdk-source-guide** – Advanced development guide: AI practices (Plan Mode, verification-driven development, sub-agents, context engineering) and Miden source repository map for discovering patterns beyond basic skills
+
+### React Frontend Development
+
+- **react-sdk-patterns** – Complete `@miden-sdk/react` hook API reference: MidenProvider, query hooks, mutation hooks, transaction stages, signer integration, utilities
+- **frontend-pitfalls** – Critical frontend pitfalls: WASM init race, recursive access crash, COOP/COEP headers, BigInt handling, Bech32 mismatch, IndexedDB state loss
+- **vite-wasm-setup** – Vite + WASM configuration: required plugins, deployment headers (Nginx, Vercel, Cloudflare), TypeScript config, troubleshooting
+- **frontend-source-guide** – Advanced frontend development guide: AI practices and miden-client source repository map for discovering patterns beyond basic skills
+- **signer-integration** – Integrating external signers (Para, Turnkey, MidenFi wallet adapter) and building custom signers for Miden React frontends
+- **testing-patterns** – Testing conventions: Vitest + testing-library setup, `@miden-sdk/react` module mocking, fixtures, TDD workflow for Miden React components
+
 ### Miden Assembly
 
 - **masm-inline-comments** – Inline commenting conventions for .masm files (lowercase, avoid over-commenting)
 - **masm-doc-comments** – Procedure documentation format (`#!` doc blocks with Inputs, Outputs, Where, Panics, Invocation)
 - **masm-padding** – Stack padding conventions for `call` vs `exec` procedures
 
-### Miden Client
+### Miden Client (Web SDK & Internals)
 
-- **rust-client-patterns** – Rust conventions for the core client library: error handling (thiserror + ErrorHint), Store trait (adding methods across SqliteStore/WebStore with cross-platform async_trait), `Client<AUTH>` generic pattern, `no_std` imports (`alloc::`/`core::`), and section header formatting (`// ===` top-level, `// ---` subsections)
-- **wasm-bridge** – Rust↔JS WASM boundary conventions: `#[wasm_bindgen]` method exposure with `js_name`, newtype wrappers with `From` conversions, `js_error_with_context` error chaining with ErrorHint, promise handling (`await_js`/`await_ok`/`await_js_value`), data transfer objects with `getter_with_clone`, and JS function imports
-- **idxdb-patterns** – IndexedDB/Dexie persistence conventions: Dexie transactions (`db.dexie.transaction("rw", tables, ...)`), schema interfaces (`IAccount`, `IAccountCode`), database registry (`getDatabase`/`openDatabase`), `logWebStoreError` error handling, forward-only state updates, and the TS→JS dual-commit build workflow
-- **web-client-usage** – Developer-facing patterns for using the `@miden-sdk/miden-sdk` npm package: client initialization, mandatory sync ordering, type conversions (string→AccountId, BigInt amounts, NoteType enums, OutputNote wrapping), transaction patterns (mint, send, consume, swap, custom builder), private note transport flow, querying (accounts, notes, transactions), import/export, common multi-step workflows (mint→sync→consume), and pitfall avoidance (sync-first, BigInt, faucet-executes-mint)
-- **react-sdk-patterns** – React SDK conventions: query hook structure (10-step pattern with cache/refetch/sync-refresh), mutation hooks (stage tracking: idle→executing→proving→submitting→complete), Zustand store (selectors, immutable Map updates, `reset()`), MidenProvider (`runExclusive`, `AsyncLock`, auto-sync), strict TypeScript (`T | null` everywhere), mock factories with override merge, and Vitest/Playwright test patterns
+- **rust-client-patterns** – Rust conventions for the `miden-client` crate: error handling (`thiserror` + `ErrorHint`), `Store` trait (adding methods across `SqliteStore`/`WebStore` with cross-platform `async_trait`), `Client<AUTH>` generic pattern with the v14 `Keystore` super-trait, `no_std` imports (`alloc::`/`core::`), `ClientBuilder` network constructors (`for_testnet()`, `for_devnet()`, `for_localhost()`), and section header formatting (`// ===` top-level, `// ---` subsections)
+- **wasm-bridge** – Rust↔JS WASM boundary conventions for the `web-client` crate: `#[wasm_bindgen]` method exposure with `js_name`, newtype wrappers with `From` conversions, `js_error_with_context` error chaining with `ErrorHint`, promise handling (`await_js`/`await_ok`/`await_js_value`), data transfer objects with `getter_with_clone`, JS function imports, and the `MidenClient`/`WasmWebClient` (`WebClient`) two-layer JS API
+- **idxdb-patterns** – IndexedDB/Dexie persistence conventions for the `idxdb-store` crate: Dexie transactions (`db.dexie.transaction("rw", tables, ...)`), schema interfaces (`IAccount`, `IAccountCode`), database registry (`getDatabase`/`openDatabase`), `logWebStoreError` error handling, forward-only state updates, and the TS→JS dual-commit build workflow
+- **web-client-usage** – Developer-facing patterns for using the `@miden-sdk/miden-sdk` npm package on Miden v0.14: `MidenClient.create()` initialization, the resource-based API (`client.accounts`, `client.transactions`, `client.notes`, `client.tags`, `client.settings`, `client.compile`, `client.keystore`), sync ordering, type conversions (`AccountId.fromHex`, `BigInt` amounts, `NoteVisibility`), transaction flows (mint, send, consume, swap, custom contracts), private note transport, querying, import/export, and pitfall avoidance
 
 ## Commands
 
@@ -98,8 +114,8 @@ Findings are graded by severity: `[CRITICAL]` (loss of funds / key compromise), 
 **Example:**
 ```
 /tdd-cycle user authentication middleware
-/tdd-cycle OutputNote.p2id() factory method
-/tdd-cycle WebClient.create() options parsing
+/tdd-cycle P2idNote::create factory method
+/tdd-cycle MidenClient.create() options parsing
 ```
 
 **What it does:** Executes a full Test-Driven Development workflow with strict red-green-refactor discipline across six phases:
@@ -335,6 +351,6 @@ ln -sf /path/to/agent-skills/skills/masm-padding .
 
 ## Usage
 
-**Skills** are applied automatically when the agent detects relevant tasks (editing, reviewing, or creating .masm files). You can also invoke them explicitly via most agent interfaces.
+**Skills** are applied automatically when the agent detects relevant tasks (editing, reviewing, or creating Miden code). You can also invoke them explicitly via most agent interfaces.
 
 **Commands** are invoked explicitly with `/<command-name>` followed by arguments. The `$ARGUMENTS` placeholder in each command file is replaced with whatever you type after the command name.

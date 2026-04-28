@@ -1,450 +1,296 @@
 ---
 name: react-sdk-patterns
-description: Enforce conventions for the Miden React SDK (packages/react-sdk). Use when editing hooks, Zustand store, provider, types, or tests in the React SDK — especially for hook return types, store mutations, strict TypeScript patterns, and testing.
+description: Complete guide to building Miden frontends with @miden-sdk/react hooks. Covers MidenProvider setup, all query hooks (useAccounts, useAccount, useNotes, useSyncState, useAssetMetadata), all mutation hooks (useCreateWallet, useSend, useMultiSend, useMint, useConsume, useSwap, useTransaction, useCreateFaucet), transaction stages, signer integration, and utility functions. Use when writing, editing, or reviewing Miden React frontend code.
 ---
 
 # Miden React SDK Patterns
 
-## TypeScript Strict Mode
+## SDK Choice
 
-The SDK uses `strict: true` with additional strictness flags. All code must pass `tsc --noEmit`.
+ALWAYS use `@miden-sdk/react` hooks. Only fall back to raw `@miden-sdk/miden-sdk` WebClient via `useMidenClient()` for operations not covered by hooks. The React SDK handles WASM safety (runExclusive), state management (Zustand), auto-sync, and transaction stage tracking automatically.
 
-### Nullable Types
+## MidenProvider Configuration
 
-Always explicitly type nullable values with `| null`, never rely on `undefined` as absence:
+```tsx
+import { MidenProvider } from "@miden-sdk/react";
 
-```typescript
-// State
-client: WebClient | null;
-initError: Error | null;
-
-// Setter must accept the same nullable type
-setClient: (client: WebClient | null) => void;
-setInitError: (error: Error | null) => void;
+<MidenProvider
+  config={{
+    rpcUrl: "devnet",           // "devnet" | "testnet" | "localhost" | custom URL
+    prover: "devnet",           // "local" | "devnet" | "testnet" | custom URL
+    autoSyncInterval: 15000,    // ms, set to 0 to disable. Default: 15000
+    noteTransportUrl: "...",    // optional: for private note delivery
+  }}
+  loadingComponent={<Loading />}  // shown during WASM init
+  errorComponent={<Error />}      // shown on init failure (receives Error prop)
+>
+  <App />
+</MidenProvider>
 ```
 
-### Error Assertion
+| Network | rpcUrl | Use When |
+|---------|--------|----------|
+| Devnet | `"devnet"` | Development, testing with fake tokens |
+| Testnet | `"testnet"` | Pre-production testing |
+| Localhost | `"localhost"` | Local node at `http://localhost:57291` |
 
-Always convert unknown caught errors to `Error`:
+## Query Hooks
 
-```typescript
-catch (err) {
-  setError(err instanceof Error ? err : new Error(String(err)));
-}
+Each returns its own result shape plus `isLoading`, `error`, `refetch`.
+
+### useAccounts()
+```tsx
+const { accounts, wallets, faucets, isLoading, error, refetch } = useAccounts();
+// wallets — AccountHeader[] (regular wallet accounts)
+// faucets — AccountHeader[] (token faucet accounts)
+// accounts — AccountHeader[] (everything)
 ```
 
-### Input Normalization
-
-Accept multiple input types and normalize with `useMemo`:
-
-```typescript
-const accountIdStr = useMemo(() => {
-  if (!accountId) return undefined;
-  if (typeof accountId === "string") return accountId;
-  if (typeof (accountId as AccountId).toString === "function") {
-    return (accountId as AccountId).toString();
-  }
-  return String(accountId);
-}, [accountId]);
+### useAccount(accountId: string)
+```tsx
+const { account, assets, getBalance, isLoading, error, refetch } = useAccount(accountId);
+// account — Account object (.id, .nonce, .bech32id())
+// assets — AssetBalance[] (assetId, amount, symbol?, decimals?)
+// getBalance(faucetId) — bigint balance for specific token
 ```
 
-### Exhaustive Switch
+### useNotes(filter?)
+```tsx
+const { notes, consumableNotes, noteSummaries, consumableNoteSummaries, isLoading, error, refetch } = useNotes();
+// notes — InputNoteRecord[]
+// consumableNotes — ConsumableNoteRecord[]
+// noteSummaries — NoteSummary[] (id, assets, sender)
+// consumableNoteSummaries — NoteSummary[]
 
-Always include a default case in switch statements:
-
-```typescript
-function getStorageMode(mode: "private" | "public" | "network") {
-  switch (mode) {
-    case "private":
-      return AccountStorageMode.private();
-    case "public":
-      return AccountStorageMode.public();
-    case "network":
-      return AccountStorageMode.network();
-    default:
-      return AccountStorageMode.private();
-  }
-}
+// Filter by account:
+const { notes } = useNotes({ accountId: "0x..." });
+// Filter by status:
+const { notes } = useNotes({ status: "committed" });
 ```
 
-## Zustand Store
-
-### Store Definition
-
-Single interface for all state and actions. Create with `create<T>()()`:
-
-```typescript
-interface MidenStoreState {
-  // State
-  client: WebClient | null;
-  isReady: boolean;
-  accounts: AccountHeader[];
-  accountDetails: Map<string, Account>;
-  sync: { syncHeight: number; isSyncing: boolean; lastSyncTime: number | null; error: Error | null };
-
-  // Actions
-  setClient: (client: WebClient | null) => void;
-  setAccounts: (accounts: AccountHeader[]) => void;
-  setAccountDetails: (accountId: string, account: Account) => void;
-  setSyncState: (sync: Partial<MidenStoreState["sync"]>) => void;
-  reset: () => void;
-}
-
-export const useMidenStore = create<MidenStoreState>()((set) => ({
-  ...initialState,
-  setClient: (client) => set({ client, isReady: true }),
-  setSyncState: (sync) => set((state) => ({
-    sync: { ...state.sync, ...sync },
-  })),
-  setAccountDetails: (accountId, account) =>
-    set((state) => {
-      const newMap = new Map(state.accountDetails);
-      newMap.set(accountId, account);
-      return { accountDetails: newMap };
-    }),
-  reset: () => set(initialState),
-}));
+### useSyncState()
+```tsx
+const { syncHeight, isSyncing, lastSyncTime, sync, error } = useSyncState();
+await sync(); // Manual sync
 ```
 
-### Store Conventions
-
-- **Partial merge** for nested objects: `{ ...state.sync, ...sync }`
-- **Immutable Map updates**: create new Map, set on it, return it
-- **Always provide `reset()`** that restores `initialState`
-- **Separate loading flags** per async operation: `isLoadingAccounts`, `isLoadingNotes`
-- **Selector hooks** for optimized re-renders:
-
-```typescript
-export const useClient = () => useMidenStore((state) => state.client);
-export const useIsReady = () => useMidenStore((state) => state.isReady);
+### useAssetMetadata(faucetId: string | string[])
+```tsx
+const { assetMetadata } = useAssetMetadata(faucetId);
+// assetMetadata — Map<string, AssetMetadata>
+// Each entry: { assetId, symbol?, decimals? }
+const meta = assetMetadata.get(faucetId);
+// meta.symbol — "TEST"
+// meta.decimals — 8
 ```
 
-## Hook Patterns
-
-### Query Hook Structure
-
-Query hooks follow a 10-step pattern:
-
-```typescript
-export function useAccount(accountId: string | AccountId | undefined): AccountResult {
-  // 1. Get dependencies from context
-  const { client, isReady, runExclusive } = useMiden();
-
-  // 2. Get store accessors
-  const accountDetails = useMidenStore((state) => state.accountDetails);
-  const setAccountDetails = useMidenStore((state) => state.setAccountDetails);
-
-  // 3. Local state for async tracking
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-
-  // 4. Normalize inputs with useMemo
-  const accountIdStr = useMemo(() => { /* ... */ }, [accountId]);
-
-  // 5. Get cached value from store
-  const account = accountIdStr ? (accountDetails.get(accountIdStr) ?? null) : null;
-
-  // 6. Define refetch with useCallback
-  const refetch = useCallback(async () => {
-    if (!client || !isReady || !accountIdStr) return;
-    setIsLoading(true);
-    setError(null);
-    try {
-      const result = await runExclusive(() => client.getAccount(accountIdObj));
-      setAccountDetails(accountIdStr, result);
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error(String(err)));
-    } finally {
-      setIsLoading(false);
-    }
-  }, [client, isReady, accountIdStr, setAccountDetails]);
-
-  // 7. Initial fetch effect
-  useEffect(() => {
-    if (isReady && accountIdStr && !account) {
-      refetch();
-    }
-  }, [isReady, accountIdStr, account, refetch]);
-
-  // 8. Sync-triggered refresh
-  useEffect(() => {
-    if (!isReady || !accountIdStr || !lastSyncTime) return;
-    refetch();
-  }, [isReady, accountIdStr, lastSyncTime, refetch]);
-
-  // 9. Derived state with useMemo
-  const assets = useMemo(() => /* derive */, [account]);
-
-  // 10. Return typed result
-  return { account, assets, isLoading, error, refetch };
-}
+### useTransactionHistory(options?)
+```tsx
+const { records, record, status, isLoading, error, refetch } = useTransactionHistory({ id: txId });
+// status: "pending" | "committed" | "discarded" | null
 ```
 
-### Mutation Hook Structure
+## Mutation Hooks
 
-Mutation hooks track stage progression:
+Each returns its own action function plus `isLoading`, `stage`, `error`, `reset`.
 
-```typescript
-type TransactionStage = "idle" | "executing" | "proving" | "submitting" | "complete";
+**Transaction stages**: `"idle"` → `"executing"` → `"proving"` → `"submitting"` → `"complete"`
 
-export function useSend(): UseSendResult {
-  const { client, isReady, sync, runExclusive, prover } = useMiden();
-  const [result, setResult] = useState<TransactionResult | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [stage, setStage] = useState<TransactionStage>("idle");
-  const [error, setError] = useState<Error | null>(null);
-
-  const send = useCallback(async (options: SendOptions): Promise<TransactionResult> => {
-    if (!client || !isReady) throw new Error("Miden client is not ready");
-
-    setIsLoading(true);
-    setStage("executing");
-    setError(null);
-
-    try {
-      // Execute
-      setStage("proving");
-      // Prove
-      setStage("submitting");
-      // Submit
-      setStage("complete");
-      setResult(txSummary);
-      await sync();
-      return txSummary;
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error(String(err)));
-      setStage("idle");
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [client, isReady, prover, runExclusive, sync]);
-
-  const reset = useCallback(() => {
-    setResult(null);
-    setIsLoading(false);
-    setStage("idle");
-    setError(null);
-  }, []);
-
-  return { send, result, isLoading, stage, error, reset };
-}
+### useCreateWallet()
+```tsx
+const { createWallet, wallet, isCreating, error, reset } = useCreateWallet();
+const account = await createWallet({
+  storageMode: "private",  // "private" | "public" | "network". Default: "private"
+  mutable: true,           // Default: true
+  authScheme: 0,           // 0 = RpoFalcon512, 1 = EcdsaK256Keccak. Default: 0
+});
 ```
 
-### Hook Naming
-
-| Pattern | Naming | Example |
-|---------|--------|---------|
-| Query (plural) | `use<Entities>` | `useAccounts`, `useNotes` |
-| Query (single) | `use<Entity>` | `useAccount` |
-| Mutation | `use<Action>` | `useSend`, `useCreateWallet`, `useSwap` |
-| State | `use<StateName>` | `useSyncState` |
-| Result type | `Use<HookName>Result` | `UseSendResult`, `UseAccountResult` |
-
-### Hook Return Types
-
-Always define an explicit interface for the return type:
-
-```typescript
-export interface UseSendResult {
-  send: (options: SendOptions) => Promise<TransactionResult>;
-  result: TransactionResult | null;
-  isLoading: boolean;
-  stage: TransactionStage;
-  error: Error | null;
-  reset: () => void;
-}
+### useCreateFaucet()
+```tsx
+const { createFaucet, faucet, isCreating, error, reset } = useCreateFaucet();
+const account = await createFaucet({
+  tokenSymbol: "TEST",
+  decimals: 8,             // Default: 8
+  maxSupply: 1000000n,     // bigint!
+  storageMode: "public",   // Default: "private"
+});
 ```
 
-## Provider Pattern
+### useSend()
+```tsx
+const { send, result, isLoading, stage, error, reset } = useSend();
+await send({
+  from: senderAccountId,
+  to: recipientAccountId,
+  assetId: faucetId,       // token faucet ID
+  amount: 1000n,           // bigint!
+  noteType: "private",     // "private" | "public". Default: "private"
+  recallHeight: 100,       // optional: sender can reclaim after this block
+  timelockHeight: 50,      // optional: recipient can consume after this block
+});
+```
 
-### MidenProvider Structure
+### useMultiSend()
+```tsx
+const { sendMany, result, isLoading, stage, error, reset } = useMultiSend();
+await sendMany({
+  from: senderAccountId,
+  assetId: faucetId,
+  recipients: [
+    { to: recipient1, amount: 500n },
+    { to: recipient2, amount: 300n },
+  ],
+  noteType: "private",
+});
+```
 
-```typescript
-export function MidenProvider({
-  children,
-  config = {},
-  loadingComponent,
-  errorComponent,
-}: MidenProviderProps) {
-  // Zustand store access
-  const { client, isReady, isInitializing, initError, setClient } = useMidenStore();
+### useMint()
+```tsx
+const { mint, result, isLoading, stage, error, reset } = useMint();
+await mint({
+  targetAccountId: recipientId,
+  faucetId: myFaucetId,
+  amount: 10000n,         // bigint!
+  noteType: "public",
+});
+```
 
-  // Refs for non-reactive state
-  const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const isInitializedRef = useRef(false);
-  const clientLockRef = useRef(new AsyncLock());
+### useConsume()
+```tsx
+const { consume, result, isLoading, stage, error, reset } = useConsume();
+await consume({
+  accountId: myAccountId,
+  noteIds: [noteId1, noteId2],
+});
+```
 
-  // Memoized config
-  const resolvedConfig = useMemo(() => ({ ...config }), [config]);
+### useSwap()
+```tsx
+const { swap, result, isLoading, stage, error, reset } = useSwap();
+await swap({
+  accountId: myAccountId,
+  offeredFaucetId: tokenA,
+  offeredAmount: 100n,
+  requestedFaucetId: tokenB,
+  requestedAmount: 50n,
+  noteType: "private",
+  paybackNoteType: "private",
+});
+```
 
-  // runExclusive for serialized async ops
-  const runExclusive = useCallback(
-    async <T,>(fn: () => Promise<T>): Promise<T> =>
-      clientLockRef.current.runExclusive(fn),
-    []
+### useTransaction() — Escape Hatch
+```tsx
+const { execute, result, isLoading, stage, error, reset } = useTransaction();
+
+// With pre-built TransactionRequest:
+await execute({ accountId, request: txRequest });
+
+// With factory function (gets access to client):
+await execute({
+  accountId,
+  request: (client) => client.newSwapTransactionRequest(/* ... */),
+});
+```
+
+### useWaitForCommit()
+```tsx
+const { waitForCommit } = useWaitForCommit();
+await waitForCommit(result.transactionId, {
+  timeoutMs: 10000,   // Default: 10000
+  intervalMs: 1000,    // Default: 1000
+});
+```
+
+### useWaitForNotes()
+```tsx
+const { waitForConsumableNotes } = useWaitForNotes();
+await waitForConsumableNotes({
+  accountId: myAccountId,
+  minCount: 1,         // Default: 1
+  timeoutMs: 10000,
+});
+```
+
+## Transaction Progress UI
+
+```tsx
+function SendButton({ from, to, assetId, amount }) {
+  const { send, stage, isLoading, error } = useSend();
+
+  return (
+    <div>
+      <button onClick={() => send({ from, to, assetId, amount })} disabled={isLoading}>
+        {isLoading ? `${stage}...` : "Send"}
+      </button>
+      {error && <p>Error: {error.message}</p>}
+    </div>
   );
-
-  // Sync function shared via context
-  const sync = useCallback(async () => {
-    if (!client || !isReady) return;
-    // Prevent concurrent syncs, use runExclusive
-  }, [client, isReady, runExclusive]);
-
-  // One-time initialization effect
-  useEffect(() => {
-    if (isInitializedRef.current) return;
-    isInitializedRef.current = true;
-    // ... WebClient.createClient() setup
-  }, []);
-
-  // Auto-sync interval
-  useEffect(() => {
-    if (!isReady || !client) return;
-    const interval = config.autoSyncInterval ?? DEFAULTS.AUTO_SYNC_INTERVAL;
-    if (interval <= 0) return;
-    syncIntervalRef.current = setInterval(() => sync(), interval);
-    return () => { if (syncIntervalRef.current) clearInterval(syncIntervalRef.current); };
-  }, [isReady, client, config.autoSyncInterval, sync]);
-
-  // Render loading/error states
-  if (isInitializing && loadingComponent) return <>{loadingComponent}</>;
-  if (initError && errorComponent) {
-    return <>{typeof errorComponent === "function" ? errorComponent(initError) : errorComponent}</>;
-  }
-
-  return <MidenContext.Provider value={contextValue}>{children}</MidenContext.Provider>;
 }
 ```
 
-### Context Consumer Hooks
+## Signer Integration
 
-```typescript
-// Main hook — throws if not in Provider
-export function useMiden(): MidenContextValue {
-  const context = useContext(MidenContext);
-  if (!context) throw new Error("useMiden must be used within a MidenProvider");
-  return context;
-}
+### Local Keystore (Default)
+No signer provider needed. Keys are managed in the browser via IndexedDB.
 
-// Convenience hook — throws if client not ready
-export function useMidenClient(): WebClient {
-  const { client, isReady } = useMiden();
-  if (!client || !isReady) throw new Error("Miden client is not ready");
-  return client;
-}
+### External Signers
+Wrap MidenProvider with a signer provider. Three pre-built options:
+- `ParaSignerProvider` from `@miden-sdk/para` — EVM wallets
+- `TurnkeySignerProvider` from `@miden-sdk/miden-turnkey-react` — passkey auth
+- `MidenFiSignerProvider` from `@miden-sdk/wallet-adapter-react` — MidenFi wallet
+
+```tsx
+// Example: Para signer wrapping MidenProvider
+import { ParaSignerProvider } from "@miden-sdk/para";
+<ParaSignerProvider apiKey="..." environment="PRODUCTION">
+  <MidenProvider config={...}><App /></MidenProvider>
+</ParaSignerProvider>
 ```
 
-### AsyncLock
-
-Use `AsyncLock` to serialize async operations that mutate client state:
-
-```typescript
-export class AsyncLock {
-  private pending: Promise<void> = Promise.resolve();
-
-  runExclusive<T>(fn: () => Promise<T>): Promise<T> {
-    const run = this.pending.then(fn, fn);
-    this.pending = run.then(() => undefined, () => undefined);
-    return run;
-  }
-}
+### useSigner() — Unified Interface
+```tsx
+const { isConnected, connect, disconnect, name } = useSigner();
 ```
 
-All client method calls from hooks must go through `runExclusive` to prevent race conditions.
+### Custom Signer
+Implement `SignerContextValue` interface via `SignerContext.Provider`. Requires: `name`, `storeName` (unique per user for DB isolation), `accountConfig`, `signCb`, `connect`, `disconnect`. See `frontend-source-guide` skill for source references.
 
-## Export Organization
+## Utility Functions
 
-In `src/index.ts`, export in this order:
+```tsx
+import { formatAssetAmount, parseAssetAmount, getNoteSummary, formatNoteSummary, toBech32AccountId } from "@miden-sdk/react";
 
-1. Context/Provider (core setup)
-2. Query Hooks (alphabetical)
-3. Mutation Hooks (alphabetical)
-4. Types (comprehensive)
-5. Re-exported SDK types (convenience)
-6. Utilities (select functions)
-7. Defaults/Constants
-
-Export result types alongside their hooks:
-```typescript
-export { useSend } from "./hooks/useSend";
-export type { UseSendResult } from "./hooks/useSend";
+formatAssetAmount(1000000n, 8)       // "0.01"
+parseAssetAmount("0.01", 8)           // 1000000n
+const summary = getNoteSummary(note); // { id, assets, sender }
+formatNoteSummary(summary);           // "1.5 TEST"
+toBech32AccountId("0x1234...");       // "miden1qy35..."
 ```
 
-## Testing
+## Direct Client Access
 
-### Unit Tests (Vitest)
+```tsx
+const client = useMidenClient(); // throws if not ready
+const { runExclusive } = useMiden();
 
-Reset store before each test:
-
-```typescript
-import { describe, it, expect, beforeEach } from "vitest";
-import { useMidenStore } from "../../store/MidenStore";
-
-beforeEach(() => {
-  useMidenStore.getState().reset();
+// For operations not covered by hooks:
+await runExclusive(async (client) => {
+  const header = await client.getBlockHeaderByNumber(100);
 });
 ```
 
-Test state directly via `getState()`:
+## Type Imports
 
-```typescript
-it("should set client and mark as ready", () => {
-  const mockClient = createMockWebClient();
-  useMidenStore.getState().setClient(mockClient as any);
-  const state = useMidenStore.getState();
-  expect(state.client).toBe(mockClient);
-  expect(state.isReady).toBe(true);
-});
-```
-
-### Mock Factories
-
-Use factory functions with override merge pattern:
-
-```typescript
-export const createMockWebClient = (
-  overrides: Partial<MockWebClientType> = {}
-) => {
-  const defaultClient: MockWebClientType = {
-    getAccounts: vi.fn().mockResolvedValue([]),
-    getAccount: vi.fn().mockResolvedValue(null),
-    newWallet: vi.fn().mockResolvedValue(createMockAccount()),
-  };
-  return { ...defaultClient, ...overrides };
-};
-```
-
-Rules:
-- Use `vi.fn()` for all method mocks
-- Use `mockResolvedValue()` for async methods
-- Provide `createMock*` factories for each SDK type
-- Support overrides via spread: `{ ...defaults, ...overrides }`
-
-### Integration Tests (Playwright)
-
-Use `page.evaluate()` to execute in browser context:
-
-```typescript
-test("hook executes transaction", async ({ page }) => {
-  await page.goto("http://localhost:8081/react-hooks.html");
-
-  const result = await page.evaluate(async () => {
-    const api = (window as any).__reactSdk;
-    return await api.runTransaction();
-  });
-
-  expect(result.transactionId).toBeTruthy();
-});
-```
-
-### Verification Checklist
-
-After any react-sdk change, always run:
-```bash
-cd packages/react-sdk
-yarn typecheck    # tsc --noEmit
-yarn lint         # eslint
-yarn test         # vitest
-yarn build        # tsup + DTS generation
+```tsx
+import type {
+  MidenConfig, QueryResult, MutationResult, TransactionStage,
+  AccountsResult, AccountResult, AssetBalance, NotesResult, NoteSummary,
+  SendOptions, MultiSendOptions, MintOptions, ConsumeOptions, SwapOptions,
+  CreateWalletOptions, CreateFaucetOptions, ExecuteTransactionOptions,
+  TransactionResult, SyncState, WaitForCommitOptions, WaitForNotesOptions,
+  Account, AccountId, InputNoteRecord, ConsumableNoteRecord,
+  TransactionRecord, TransactionRequest, NoteType, AccountStorageMode,
+  SignerContextValue, SignCallback, SignerAccountConfig,
+} from "@miden-sdk/react";
 ```
