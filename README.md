@@ -26,6 +26,7 @@ Skills for AI agents when working with Miden projects.
 - **masm-inline-comments** – Inline commenting conventions for .masm files (lowercase, avoid over-commenting)
 - **masm-doc-comments** – Procedure documentation format (`#!` doc blocks with Inputs, Outputs, Where, Panics, Invocation)
 - **masm-padding** – Stack padding conventions for `call` vs `exec` procedures
+- **masm-formatting** – Orchestrator covering capitalization, `(N)` span notation, cross-repo doc-comment divergences, `Cycles:`, and chained assertion style
 
 ## Installation
 

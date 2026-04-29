@@ -36,6 +36,34 @@ Only apply this rule to new code you write. Do not remove comments that are pres
 - Non-obvious logic or business rules
 - TODO items and references to external specs
 
+### 3. Blank line after `# => [...]` trackers
+
+Insert a blank line after a `# => [...]` stack-state tracker, except when the next non-blank line is one of:
+
+- `end` (proc / `while.true` / `if.true` / `repeat.N` closing).
+- A control-flow keyword such as `else`, `else.true`, or `else.false`.
+- Another `# =>` line that continues the same multi-line stack state.
+- A `#` continuation comment that explains the tracker.
+
+This pairs each stack state visually with the operation that produced it and lets the eye skim from one labeled state to the next.
+
+**Good:**
+
+```masm
+exec.native_account::remove_asset
+# => [ASSET, note_idx, pad(11)]
+
+dupw dup.8 movdn.4
+# => [ASSET, note_idx, ASSET, note_idx, pad(11)]
+```
+
+**Also OK (no blank line before `end` or control flow):**
+
+```masm
+# => [pad(16)]
+end
+```
+
 ## Examples
 
 **Good:**
