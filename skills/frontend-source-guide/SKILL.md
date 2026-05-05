@@ -1,6 +1,6 @@
 ---
 name: frontend-source-guide
-description: Guide for advanced Miden frontend development using source repo exploration. Covers AI development practices (Plan Mode, verification-driven development, context engineering, sub-agents) and maps the miden-client source repository for discovering advanced patterns. Use when building complex applications beyond basic hook usage, implementing custom signers, working with raw WebClient, or troubleshooting SDK internals.
+description: Guide for advanced Miden frontend development using source repo exploration. Covers AI development practices (Plan Mode, verification-driven development, context engineering, sub-agents) and maps the miden-client source repository for discovering advanced patterns. Use when building complex applications beyond basic hook usage, implementing custom signers, working with WasmWebClient directly, or troubleshooting SDK internals.
 ---
 
 # Advanced Miden Frontend Development: Source-Guided Context Engineering
@@ -13,7 +13,7 @@ For any non-trivial frontend application, start in Plan Mode before writing code
 
 - Explore React SDK source and examples to understand available patterns
 - Design the component hierarchy, data flow, and which hooks to use
-- Identify which built-in hooks cover your needs vs what requires raw WebClient
+- Identify which built-in hooks cover your needs vs what requires direct WasmWebClient access
 - Map out the user flow: account creation, token operations, note handling
 
 Rule of thumb: if the task involves custom transactions, external signers, or patterns not covered by the basic skills, plan first.
@@ -70,7 +70,7 @@ When stuck at any stage: search the React SDK source for a similar working patte
 Clone this repo alongside your project for reference. Claude will explore it when needed for advanced patterns.
 
 ```bash
-# Contains React SDK source, WebClient WASM bindings, and working examples
+# Contains React SDK source, WasmWebClient WASM bindings, and working examples
 git clone --depth 1 https://github.com/0xMiden/miden-client.git ../miden-client
 ```
 
@@ -92,10 +92,10 @@ The primary reference for all frontend development.
 
 The Rust-to-WASM bridge that the React SDK wraps.
 
-- Contains the `WebClient` struct and all methods available via `useMidenClient()`
+- Contains the `WasmWebClient` struct and all methods available via `useMidenClient()`
 - JavaScript bindings in `js/` directory
 
-**Explore when**: A hook doesn't exist for your operation, understanding what WebClient methods are available, debugging WASM-level errors.
+**Explore when**: A hook doesn't exist for your operation, understanding what WasmWebClient methods are available, debugging WASM-level errors.
 
 ### `crates/idxdb-store/` — IndexedDB Persistence
 
@@ -117,14 +117,14 @@ The browser storage layer for accounts, keys, notes, and transaction history.
 | Token display | `src/utils/amounts.ts` | formatAssetAmount, parseAssetAmount |
 | Account ID formatting | `src/utils/accountBech32.ts` | toBech32AccountId |
 | State management | `src/store/MidenStore.ts` | Zustand selectors, cached state |
-| Direct WebClient usage | `src/context/MidenProvider.tsx` | useMidenClient(), runExclusive |
+| Direct WasmWebClient usage | `src/context/MidenProvider.tsx` | useMidenClient(), runExclusive |
 | Multi-step workflow | `src/hooks/useWaitForCommit.ts`, `useWaitForNotes.ts` | Polling, timeout patterns |
 
 ---
 
 ## Common Advanced Patterns
 
-### Custom Hooks Wrapping WebClient
+### Custom Hooks Wrapping WasmWebClient
 For operations not covered by built-in hooks, create custom hooks that use useMidenClient() and runExclusive:
 ```tsx
 function useBlockHeader(blockNumber: number) {
@@ -146,16 +146,16 @@ function useBlockHeader(blockNumber: number) {
 ### Multi-Step Workflows
 Compose hooks for complex flows (mint → wait for commit → sync → consume):
 ```tsx
-const { mutate: mint } = useMint();
-const { mutate: waitForCommit } = useWaitForCommit();
-const { mutate: waitForNotes } = useWaitForNotes();
-const { mutate: consume } = useConsume();
+const { mint } = useMint();
+const { waitForCommit } = useWaitForCommit();
+const { waitForConsumableNotes } = useWaitForNotes();
+const { consume } = useConsume();
 
 const mintAndConsume = async () => {
   const { transactionId } = await mint({ targetAccountId, faucetId, amount });
-  await waitForCommit({ transactionId });
-  await waitForNotes({ accountId: targetAccountId });
-  await consume({ accountId: targetAccountId, noteIds: [...] });
+  await waitForCommit(transactionId);
+  await waitForConsumableNotes({ accountId: targetAccountId });
+  await consume({ accountId: targetAccountId, notes: [...] });
 };
 ```
 
