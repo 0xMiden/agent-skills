@@ -1,4 +1,4 @@
-# Miden Agent Skills
+# Miden Agent Tools
 
 Skills and commands for AI agents when working with the Miden ecosystem.
 
