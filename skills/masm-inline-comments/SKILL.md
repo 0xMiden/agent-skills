@@ -13,8 +13,10 @@ Inline comments (single `#`) should begin with a lowercase letter.
 
 ```masm
 # good: lowercase start
+# remove the asset from the account
 exec.native_account::remove_asset
-# => [ASSET, note_idx, pad(11)]
+dropw
+# => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
 
 # Bad: uppercase start (avoid)
 # Remove the asset from the account
@@ -31,7 +33,7 @@ Only apply this rule to new code you write. Do not remove comments that are pres
 - Standard control flow: `if.true`, `while.true`, `end`
 
 **Do comment:**
-- Stack state after complex operations: `# => [ptr, ASSET, end_ptr]`
+- Stack state after complex operations: `# => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]`
 - Purpose of a code block: `# compute the pointer at which we should stop iterating`
 - Non-obvious logic or business rules
 - TODO items and references to external specs
@@ -50,11 +52,13 @@ This pairs each stack state visually with the operation that produced it and let
 **Good:**
 
 ```masm
-exec.native_account::remove_asset
-# => [ASSET, note_idx, pad(11)]
+dupw.1 dupw.1
+# => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
 
-dupw dup.8 movdn.4
-# => [ASSET, note_idx, ASSET, note_idx, pad(11)]
+# remove the asset from the account
+exec.native_account::remove_asset
+dropw
+# => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
 ```
 
 **Also OK (no blank line before `end` or control flow):**
@@ -69,15 +73,16 @@ end
 **Good:**
 
 ```masm
+dupw.1 dupw.1
+# => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+
 # remove the asset from the account
 exec.native_account::remove_asset
-# => [ASSET, note_idx, pad(11)]
-
-dupw dup.8 movdn.4
-# => [ASSET, note_idx, ASSET, note_idx, pad(11)]
+dropw
+# => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
 
 exec.output_note::add_asset
-# => [ASSET, note_idx, pad(11)]
+# => [pad(16)]
 ```
 
 **Avoid:**

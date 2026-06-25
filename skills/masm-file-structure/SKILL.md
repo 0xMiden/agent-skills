@@ -5,7 +5,7 @@ description: Enforce file structure and section ordering for Miden Assembly (.ma
 
 # MASM File Structure
 
-MASM files must follow a fixed section order. Use section headers with the long separator line:
+MASM files follow a consistent top-level section order. Use section headers with the long separator line:
 
 ```masm
 # SECTION NAME
@@ -16,7 +16,7 @@ MASM files must follow a fixed section order. Use section headers with the long 
 
 1. **Imports** – `use` statements only; no section header
 2. **Type aliases** – `type` definitions
-3. **Constants** – see the masm-constants skill for organization (non-error constants first, then errors)
+3. **Constants** – see the masm-constants skill for organization (errors and non-error constants are grouped into separate subsections; source uses both orderings)
 4. **Public interface** – `pub proc` procedures that form the module API
 5. **Helper procedures** – `proc` (non-pub) procedures used internally
 
@@ -85,13 +85,15 @@ proc verify_leaf
 end
 ```
 
+> The order of the `# CONSTANTS` and `# ERRORS` subsections is **not fixed** in the v0.15 source: some files place errors first (e.g. the agglayer `bridge_config` and `eth_address` modules), others place non-error constants first (e.g. many `miden-standards` components such as `signature`, `guardian`, `multisig`). Both orders ship even within the same directory (`standards/notes/mint.masm` is constants-first while `standards/notes/p2id.masm` is errors-first). Either order is acceptable—just keep the two grouped separately rather than interleaved.
+
 ## Guidelines
 
 - **Imports**: One `use` per line; group by module. No blank lines between imports.
 - **Type aliases**: Define shared types (e.g. `DoubleWord`, `MemoryAddress`) before constants or procedures.
-- **Constants**: Follow the masm-constants skill—non-error constants grouped by topic; `ERR_*` in a dedicated errors subsection.
+- **Constants**: Defer to the masm-constants skill for *organization*—group non-error constants by topic and keep `ERR_*` in a dedicated errors subsection. The *order* of the errors subsection relative to the non-error constants is not fixed in source; it may come before or after, so don't treat either order as a hard rule. Just don't interleave them.
 - **Public interface**: Only `pub proc`; these are the module’s API. Order by importance or call flow.
-- **Helper procedures**: Non-pub procedures that support the public interface. May include `pub proc` helpers (e.g. `get_leaf_value`) if they are used internally or re-exported, or used for unit tests.
+- **Helper procedures**: Non-pub procedures that support the public interface. May include `pub proc` helpers (e.g. `get_leaf_value`) if they are used internally, re-exported, or used for unit tests.
 
 ## When Sections Are Omitted
 
@@ -103,6 +105,6 @@ end
 
 - [ ] Imports at top (if any)
 - [ ] Type aliases before constants and procedures
-- [ ] Constants before procedures; errors subsection after non-error constants
+- [ ] Constants before procedures; errors grouped in their own subsection, separate from non-error constants (either order)
 - [ ] Public interface (`pub proc`) before helper procedures
 - [ ] Section headers use `# SECTION NAME` and `# ===...` separator

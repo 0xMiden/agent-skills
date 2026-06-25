@@ -62,7 +62,7 @@ Procedures invoked with `call` must have explicit padding in:
 Use `pad(N)` notation where N + other elements = 16:
 
 ```masm
-#! Inputs:  [ASSET, pad(12)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
 #! Outputs: [pad(16)]
 #!
 #! Invocation: call
@@ -74,11 +74,12 @@ pub proc receive_asset
 Track padding through the procedure:
 
 ```masm
-exec.native_account::set_item
-# => [OLD_VALUE, pad(12)]
+exec.native_account::add_asset
+# => [ASSET_VALUE', pad(12)]
 
+# drop the final asset
 dropw
-# => [pad(16)] auto-padded to 16 elements    
+# => [pad(16)]
 ```
 
 ## Exec Procedures
@@ -86,7 +87,7 @@ dropw
 Procedures invoked with `exec` should NOT have explicit padding:
 
 ```masm
-#! Inputs:  [PUB_KEY]
+#! Inputs:  [PUB_KEY, scheme_id]
 #! Outputs: []
 #!
 #! Invocation: exec
@@ -124,23 +125,29 @@ These extra elements must be explicitly dropped before the procedure returns (di
 
 ## Debugging Stack Depth
 
-When unsure whether the stack matches the depth you expect, use the assembly's debug instructions to inspect it at runtime. These cost zero VM cycles, do not affect the program hash, and are stripped at compile time when the assembler is not in debug mode.
+When unsure whether the stack matches the depth you expect, use the assembly's debug instructions to inspect it at runtime. These cost zero VM cycles, do not affect the program hash, and are stripped at compile time when the assembler is in release mode.
 
 - `debug.stack` – print the full operand stack.
-- `debug.stack.N` – print only the top N elements (1 ≤ N < 256).
+- `debug.stack.N` – print only the top N elements (0 < N < 256).
 - `sdepth` – push the current stack depth onto the stack as a felt; useful when you need depth as a runtime value, e.g. to assert it:
 
   ```masm
   sdepth push.16 eq assert.err="depth must be 16 here"
   ```
 
-Run with the `--debug` flag to see output:
+Debug instructions run by default — just run the program to see their output:
 
 ```bash
-miden-vm run program.masm --debug
+miden-vm run program.masm
 ```
 
-Without `--debug`, debug instructions are silently removed. Remove or comment out `debug.*` lines before committing production MASM.
+Pass `--release` (`-r`) to disable debug instructions (release mode):
+
+```bash
+miden-vm run program.masm --release
+```
+
+In release mode debug instructions are silently removed. Remove or comment out `debug.*` lines before committing production MASM.
 
 ## Validation Checklist
 
