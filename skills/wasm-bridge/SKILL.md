@@ -358,8 +358,11 @@ The web-client crate ships **two** JS layers under `crates/web-client/js/`:
    concerns:
    - `_serializeWasmCall` queue that linearizes WASM calls (the inner client is
      behind a lock, so the JS side must not interleave async calls).
-   - `acquireSyncLock` (Web Locks) used by `syncStateWithTimeout` to coordinate
-     across tabs.
+   - `syncState()` is wrapped in the exported `withSyncLock(dbId, methodId, fn)`
+     helper (`js/syncLock.js`, Web Locks via `navigator.locks`) to coalesce
+     concurrent syncs and serialize them across tabs:
+     `return await withSyncLock(dbId, methodId, async () =>
+     this._serializeWasmCall(...))`.
    - method-classification sets (`SYNC_METHODS`, `READ_METHODS`,
      `WRITE_METHODS`) consumed by the proxy and enforced by
      `scripts/check-method-classification.js`. (`SYNC_METHODS` is a historical

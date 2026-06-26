@@ -43,7 +43,7 @@ Only apply this rule to new code you write. Do not remove comments that are pres
 Insert a blank line after a `# => [...]` stack-state tracker, except when the next non-blank line is one of:
 
 - `end` (proc / `while.true` / `if.true` / `repeat.N` closing).
-- A control-flow keyword such as `else`, `else.true`, or `else.false`.
+- A control-flow keyword such as `else` (note: `else` is always bare; a false-conditioned branch uses `if.false`, not an `else.*` suffix).
 - Another `# =>` line that continues the same multi-line stack state.
 - A `#` continuation comment that explains the tracker.
 

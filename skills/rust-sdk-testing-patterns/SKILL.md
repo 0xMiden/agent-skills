@@ -104,11 +104,13 @@ let mut note_rng =
 let note = NoteBuilder::new(sender.id(), &mut note_rng)
     .package((*note_package).clone())
     .add_assets([FungibleAsset::new(faucet.id(), 50)?.into()])
-    .note_storage([Felt::new(42), Felt::new(0)])?
+    .note_storage([Felt::from(42_u32), Felt::from(0_u32)])?
     .build()?;
 ```
 
 > v0.15: `NoteScript::root()` returns the `NoteScriptRoot` newtype, not a `Word`. `RandomCoin::new` needs a `Word`, so convert the root explicitly with `.into()` (equivalently `Word::from(...root())` or `...root().as_word()`). The bare `RandomCoin::new(... .root())` form from v0.14 no longer type-checks.
+
+> v0.15: `Felt::new(u64)` is now **fallible** — it returns `Result<Felt, FeltFromIntError>` instead of an infallible value. `note_storage` takes `impl IntoIterator<Item = Felt>`, so a bare `[Felt::new(42), Felt::new(0)]` is `[Result<Felt, _>; 2]` and will not type-check. Prefer the infallible `Felt::from(42_u32)` for in-range literals (`From<u8>/From<u16>/From<u32>` are infallible); for a `u64` use `Felt::new(n)?` or `Felt::new_unchecked(n)`.
 
 ### 7. Add to MockChain and Build
 
@@ -199,7 +201,7 @@ To create a note that carries fungible assets in tests:
 
 1. Create a `FungibleAsset` from a faucet ID and amount.
 2. Seed a `RandomCoin` from `NoteScript::from_package(note_package.as_ref())?.root().into()` (the `.into()` converts the `NoteScriptRoot` to the `Word` that `RandomCoin::new` expects).
-3. Pass the asset into `NoteBuilder::add_assets(...)` and any note inputs into `note_storage(...)`.
+3. Pass the asset into `NoteBuilder::add_assets(...)` and any note inputs into `note_storage(...)`. `note_storage` wants `Item = Felt`; build each input with the infallible `Felt::from(_u32)` (not `Felt::new(u64)`, which is fallible in v0.15 — see Step 6).
 4. Finish with `.package((*note_package).clone()).build()?`.
 
 The faucet must be set up first (see Step 3) and the sender wallet must hold sufficient assets (see Step 2).
@@ -217,6 +219,7 @@ See `integration/Cargo.toml` in [project-template](https://github.com/0xMiden/pr
 - [ ] All contracts built before account/note creation
 - [ ] Account storage seeded via `InitStorageData`
 - [ ] `NoteScript::root()` converted with `.into()` before seeding `RandomCoin`
+- [ ] Note-storage felts built with infallible `Felt::from(_u32)` (v0.15 `Felt::new(u64)` returns `Result`, so a bare `[Felt::new(..)]` array does not satisfy `Item = Felt`)
 - [ ] `Note::new(...)` is passed a `PartialNoteMetadata` (not `NoteMetadata`)
 - [ ] `prove_next_block()` called after `add_pending_executed_transaction()`
 - [ ] Post-block assertions read state from `mock_chain.committed_account(...)` or other committed chain views

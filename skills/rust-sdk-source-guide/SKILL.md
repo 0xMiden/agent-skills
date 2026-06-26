@@ -33,7 +33,7 @@ This is the single highest-leverage practice for AI-assisted Miden development.
 4. Adapt the working pattern to your use case
 5. Rebuild
 
-**Test loop**: Write tests alongside contracts. Run full repo checks with `cargo test` — or `make test` if the repo ships a GNU `Makefile` (the protocol repo's `test` target runs `cargo nextest run`); `cargo make test` only works if your own project configures the `cargo-make` tool with a `Makefile.toml` (none of the referenced Miden repos do). For a faster integration-only loop in the miden-bank workspace, use `cargo test -p integration --release` (it defines a package named `integration`). When tests fail:
+**Test loop**: Write tests alongside contracts. Run full repo checks with `cargo test` — or `make test` if the repo ships a GNU `Makefile` (the protocol repo's `test` target runs `cargo nextest run`); `cargo make test` requires a `Makefile.toml` configuring the `cargo-make` tool; among the referenced repos only the compiler ships one, so `cargo make test` works there but not in the protocol or rust-sdk repos (use `make test` / `cargo nextest run` for those). For a faster integration-only loop in the miden-bank workspace, use `cargo test -p integration --release` (it defines a package named `integration`). When tests fail:
 1. Check the error — is it a build error, a runtime assertion, or a proof failure?
 2. For assertion failures: check felt arithmetic (modular wrapping) and storage slot naming
 3. For unexpected behavior: compare your code against the closest working example in source repos

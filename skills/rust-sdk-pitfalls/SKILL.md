@@ -100,7 +100,7 @@ Storage slot names follow a strict pattern. Getting it wrong often returns the d
 | `bank_account` | `BankAccount` | `balances` | `bank_account::bank_account::balances` |
 | `bank_account` | `BankAccount` | `initialized` | `bank_account::bank_account::initialized` |
 
-**Caveat (toolchain-version dependent)**: This naming is a property of the Rust SDK contract macros, which live in the compiler repo and are independently versioned (~v0.8; the SDK crates do not carry a v0.15 tag). The slot-naming algorithm — `namespace::snake_case(struct)::field`, with non-`[A-Za-z0-9_]` mapped to `_` and `@version` stripped — has been stable, but verify against your installed toolchain rather than assuming a protocol version.
+**Caveat (toolchain-version dependent)**: This naming is a property of the Rust SDK contract macros, which live in the `miden-base-macros` crate (v0.12.0, part of the v0.15 Rust SDK family alongside `miden`, `miden-base`, and `miden-base-sys`, all 0.12.0; the separate midenc/compiler workspace is versioned 0.8.1). The slot-naming algorithm — `namespace::snake_case(struct)::field`, with non-`[A-Za-z0-9_]` mapped to `_` and `@version` stripped — has been stable, but verify against your installed toolchain rather than assuming a protocol version.
 
 ## P6: No-std Environment
 

@@ -272,8 +272,9 @@ const { txId, note } = await client.transactions.send({
 });
 
 // Stream the note via the note-transport service.
-// `to` must be a bech32 *string* (the resolver parses it via Address.fromBech32);
-// passing a pre-parsed Address object is not supported and throws.
+// `to` accepts a bech32 string, a 0x-hex string, an Account, or an AccountId
+// (resolved via resolveAddress). It does NOT accept a pre-parsed Address
+// object — that falls through to Address.fromAccountId(addr) and throws.
 await client.notes.sendPrivate({ note, to: "mtst1..." });
 ```
 
@@ -345,9 +346,11 @@ foreign accounts must be supplied with their storage requirements.
 
 ### Preview (dry run)
 
-`transactions.preview({ operation: "send" | "mint" | "consume" | "swap" | "custom", ... })`
+`transactions.preview({ operation: "send" | "mint" | "consume" | "swap" | "pswapCreate" | "pswapConsume" | "pswapCancel" | "custom", ... })`
 runs the same kernel as the real call but without proving or submitting,
-returning a summary suitable for UI confirmation screens.
+returning a summary suitable for UI confirmation screens. The `pswap*`
+operations correspond to the `transactions.pswapCreate` / `pswapConsume` /
+`pswapCancel` partial-swap methods.
 
 ## Notes
 
@@ -364,7 +367,7 @@ const file = await client.notes.export(noteId);
 
 // Private-note transport
 await client.notes.fetchPrivate();                       // pulls anything addressed to tracked accounts
-await client.notes.sendPrivate({ note, to: "mtst1..." }); // `to` is a bech32 string; delivers via the transport service
+await client.notes.sendPrivate({ note, to: "mtst1..." }); // `to`: bech32 string, 0x-hex string, Account, or AccountId (not a pre-parsed Address); delivers via the transport service
 ```
 
 ## Accounts (querying)

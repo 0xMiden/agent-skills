@@ -50,12 +50,15 @@ Not:
 This shows up most often at the start of note scripts that don't use their input arguments:
 
 ```masm
-begin
+@note_script
+pub proc main
     dropw
     # => [pad(16)]
     ...
 end
 ```
+
+Standard note scripts are MASM library procs annotated with `@note_script` (`pub proc main … end`), not bare `begin … end` programs. Bare `begin … end` is still valid MASM, but only at the top-level kernel/tx-script program entry.
 
 ## Context-Switching Procedures (`call`, `dyncall`, `syscall`)
 

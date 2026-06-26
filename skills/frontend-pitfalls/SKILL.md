@@ -54,14 +54,19 @@ await runExclusive(async () => {
 
 Built-in hooks (useSend, useConsume, etc.) already use runExclusive internally. This pitfall applies when using `useMidenClient()` directly or mixing manual client calls with hook mutations.
 
-## FP3: COOP/COEP Headers Missing (CRITICAL)
+## FP3: COOP/COEP Headers — Only for the Multi-Threaded (MT) Build (HIGH)
 
-WASM SharedArrayBuffer requires these headers. Without them, WASM init silently fails.
+COOP/COEP cross-origin-isolation is **not** a universal requirement. The web SDK ships four entry points along two axes (eager/lazy × ST/MT), and the isolation requirement depends entirely on the threading model:
 
-Opt into COOP/COEP via the Vite plugin explicitly on any route that runs Miden client code:
+- The **default** `@miden-sdk/react` (and `@miden-sdk/react/lazy`) and the **default** `@miden-sdk/miden-sdk` (and `/lazy`) are **single-threaded (ST)**. They ship single-threaded WASM that "loads in any browser context" with **no COOP/COEP requirement**. This is why the SDK's shipped example wallet runs full Miden client code (`MidenProvider`) importing the default `@miden-sdk/react` while using the bare `midenVitePlugin()` with no cross-origin isolation — ST simply does not need it.
+- Only the **multi-threaded (MT)** variants — `@miden-sdk/react/mt`, `@miden-sdk/react/mt/lazy`, `@miden-sdk/miden-sdk/mt`, `@miden-sdk/miden-sdk/mt/lazy` (wasm-bindgen-rayon, ~3–5× faster local proving) — **require** the page to be cross-origin-isolated (`self.crossOriginIsolated === true`). Without `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp`, the browser refuses to construct `WebAssembly.Memory({ shared: true })` and the MT WASM fails to instantiate at module load.
+
+So: pick ST (the default) and you need no headers at all; opt into MT only if you do local proving on a host whose headers you control.
+
+If you DO opt into the MT build, enable isolation via the Vite plugin explicitly on any route that runs the MT client:
 
 ```ts
-// in your app's vite.config.ts
+// in your app's vite.config.ts — only needed for the MT build
 import { midenVitePlugin } from "@miden-sdk/vite-plugin";
 
 export default defineConfig({
@@ -69,11 +74,11 @@ export default defineConfig({
 });
 ```
 
-Do not rely on the plugin's own default — `@miden-sdk/vite-plugin` defaults `crossOriginIsolation` to `false` (verified false in every v0.14–v0.15 tag of the executable source; note the plugin README incorrectly says the default is `true`). Pass `true` explicitly. The SDK's shipped example wallet deliberately omits this argument (`midenVitePlugin()`) because it pairs with `paraVitePlugin()` for Para OAuth, and `same-origin` COOP nullifies `window.opener` in OAuth popups — so isolation must stay OFF there. Your own app, if it runs Miden client code on a route, must opt in.
+Do not rely on the plugin's own default — `@miden-sdk/vite-plugin` defaults `crossOriginIsolation` to `false` (verified false in the executable source at every v0.14–v0.15 tag; note the plugin README incorrectly says the default is `true`). For MT you must pass `true` explicitly. For ST (the default build) leaving it `false` is correct — the example wallet uses bare `midenVitePlugin()` precisely because it is ST, and because `same-origin` COOP would nullify `window.opener` in the Para OAuth popups it pairs with via `paraVitePlugin()`.
 
-COOP/COEP must also be set on the production server — the plugin covers the Vite dev and preview servers, not your real production host. See `vite-wasm-setup` for per-host configs (Nginx, Vercel, Cloudflare).
+For MT, COOP/COEP must also be set on the production server — the plugin covers only the Vite dev and preview servers, not your real production host. See `vite-wasm-setup` for per-host configs (Nginx, Vercel, Cloudflare).
 
-**Gotcha (opt-out path)**: Cross-origin-isolation breaks third-party iframes, external scripts without CORS, and OAuth popups (this is exactly why the example wallet leaves it off). If a route must host those and cannot use Miden client code, either (a) use `Cross-Origin-Embedder-Policy: credentialless` for weaker isolation that still allows most cross-origin resources, or (b) scope `crossOriginIsolation: false` to that specific route and accept that Miden operations won't work there. Do not disable isolation globally as a convenience.
+**Gotcha (when isolation is on)**: Cross-origin-isolation breaks third-party iframes, external scripts without CORS, and OAuth popups. If a route must host those and cannot satisfy isolation, stay on the default ST subpaths (they need no isolation) or, if you genuinely need MT elsewhere, use `Cross-Origin-Embedder-Policy: credentialless` for weaker isolation that still allows most cross-origin resources, or scope the headers to only the MT routes. Do not enable isolation globally as a convenience.
 
 ## FP4: BigInt at the Raw WASM Boundary (HIGH)
 
@@ -144,32 +149,36 @@ The client persists accounts, keys, and notes in IndexedDB. Browser "Clear site 
 
 ## FP8: Vite Configuration Requirements (MEDIUM)
 
-The `@miden-sdk/vite-plugin` package handles all Miden-specific Vite config. The recommended pattern for any new Miden app that runs client code is:
+The `@miden-sdk/vite-plugin` package handles all Miden-specific Vite config. The recommended pattern for any new Miden app is:
 
 ```ts
 import { midenVitePlugin } from "@miden-sdk/vite-plugin";
 
 export default defineConfig({
-  plugins: [react(), midenVitePlugin({ crossOriginIsolation: true })],
+  // ST (default build): bare plugin is enough — no isolation needed
+  plugins: [react(), midenVitePlugin()],
+
+  // MT build only: opt into cross-origin isolation
+  // plugins: [react(), midenVitePlugin({ crossOriginIsolation: true })],
 });
 ```
 
-`midenVitePlugin()` handles WASM loading (esnext build target, top-level await), pre-bundling exclusion (`optimizeDeps.exclude`), package deduplication, a gRPC-web RPC proxy, and — when `crossOriginIsolation: true` is passed — emits the COOP `same-origin` + COEP `require-corp` headers the SDK requires for `SharedArrayBuffer` on both the dev `server` and the `preview` server.
+`midenVitePlugin()` handles WASM loading (esnext build target, top-level await), pre-bundling exclusion (`optimizeDeps.exclude`), package deduplication, a gRPC-web RPC proxy, and — when `crossOriginIsolation: true` is passed — emits the COOP `same-origin` + COEP `require-corp` headers the **MT** build requires for `SharedArrayBuffer` on both the dev `server` and the `preview` server.
 
-| Option | Plugin source default | Recommended for a Miden client route | Purpose |
-|--------|-----------------------|--------------------------------------|---------|
-| `crossOriginIsolation` | `false` | **`true`** | Emit COOP/COEP headers for SharedArrayBuffer |
+| Option | Plugin source default | When to set `true` | Purpose |
+|--------|-----------------------|--------------------|---------|
+| `crossOriginIsolation` | `false` | Only when importing the MT variants (`/mt`, `/mt/lazy`) | Emit COOP/COEP headers for SharedArrayBuffer |
 
-Always pass `crossOriginIsolation: true` explicitly on routes that run Miden client code. The plugin's `false` default is wrong for such a route, and relying on it risks silent WASM-init failures. (The plugin README at v0.15.0 incorrectly documents the default as `true`; the executable source default is `false`, unchanged across v0.14–v0.15. Do not trust the README.) The shipped example wallet uses the bare `midenVitePlugin()` precisely because it pairs with `paraVitePlugin()` and must keep isolation OFF for Para OAuth — see FP3 for the opt-out path. For production, set the same headers at your real production host — the plugin only injects them into the Vite dev and preview servers. See `vite-wasm-setup` for host-specific configs.
+For the **default single-threaded build**, leave `crossOriginIsolation` at its `false` default — the ST WASM loads in any browser context and needs no headers. Pass `crossOriginIsolation: true` **only** when you opt into the multi-threaded variants for local proving; without the headers the MT WASM can't construct shared memory and fails to instantiate. (The plugin README at v0.15.0 incorrectly documents the default as `true`; the executable source default is `false`, unchanged across v0.14–v0.15. Do not trust the README.) The shipped example wallet uses bare `midenVitePlugin()` because it is ST (and because isolation would break the Para OAuth popups it pairs with via `paraVitePlugin()`) — see FP3. For an MT production deployment, set the same COOP/COEP headers at your real production host — the plugin only injects them into the Vite dev and preview servers. See `vite-wasm-setup` for host-specific configs.
 
 ## FP9: React StrictMode Double-Init (LOW)
 
-React StrictMode double-invokes effects in development (since React 18; the React SDK's peer dep is `react >= 18.0.0`). MidenProvider guards against this, but direct `WasmWebClient.createClient()` calls will initialize twice.
+React StrictMode double-invokes effects in development (since React 18; the React SDK's peer dep is `react >= 18.0.0`). MidenProvider guards against this, but direct low-level `createClient()` calls will initialize twice.
 
-Naming: `@miden-sdk/miden-sdk` exports the raw wasm-bindgen client as `WasmWebClient` (an internal export used by integration tests) and a separate higher-level `WebClient` wrapper class. They are two distinct classes. The React SDK does its low-level init via the raw client, importing it locally as `WebClient` (`import { WasmWebClient as WebClient } from "@miden-sdk/miden-sdk"`). For manual low-level setup, create the raw client via `WasmWebClient.createClient(...)`.
+Naming: `@miden-sdk/miden-sdk` exposes a high-level `MidenClient` wrapper class (the recommended entry point) and a low-level client re-exported as `WasmWebClient` — an `@internal` export used mainly by integration tests, whose type declaration explicitly says "Use MidenClient instead." (The class is named `WebClient` in source and re-exported under the alias `WasmWebClient`.) The React SDK does its own low-level init by importing that internal client locally as `WebClient` (`import { WasmWebClient as WebClient } from "@miden-sdk/miden-sdk"`). For manual low-level setup you would call `WasmWebClient.createClient(...)`, but prefer `MidenProvider` (or the high-level `MidenClient`) so init is guarded.
 
 ```tsx
-// WRONG — manual client creation in useEffect
+// WRONG — manual low-level client creation in useEffect
 useEffect(() => {
   const client = await WasmWebClient.createClient(url); // called twice in dev
 }, []);
@@ -184,10 +193,10 @@ useEffect(() => {
 |---|---------|----------|---------------|
 | FP1 | WASM init race | CRITICAL | Use loadingComponent or check isReady |
 | FP2 | Recursive WASM | CRITICAL | Use runExclusive() for all direct client access |
-| FP3 | COOP/COEP | CRITICAL | Add headers in your `vite.config.ts` AND production server |
+| FP3 | COOP/COEP | HIGH | Default ST build needs no headers; required ONLY for the `/mt` build |
 | FP4 | BigInt | HIGH | Hooks accept `bigint \| number` and coerce; prefer bigint, required at the raw WASM boundary |
 | FP5 | Bech32 mismatch | HIGH | Match network in rpcUrl and addresses |
 | FP6 | Auto-sync | MEDIUM | Set autoSyncInterval: 0 if UI stability matters |
 | FP7 | IndexedDB loss | MEDIUM | Warn users; use external signers for production |
-| FP8 | Vite config | MEDIUM | Always pass `midenVitePlugin({ crossOriginIsolation: true })` — don't rely on the plugin default |
+| FP8 | Vite config | MEDIUM | Bare `midenVitePlugin()` for ST; pass `crossOriginIsolation: true` only for the `/mt` build |
 | FP9 | StrictMode | LOW | Use MidenProvider, not manual client creation |

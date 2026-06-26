@@ -22,7 +22,7 @@ import { MidenProvider } from "@miden-sdk/react";
     noteTransportUrl: "...",    // optional: for private note delivery
   }}
   loadingComponent={<Loading />}  // shown during WASM init
-  errorComponent={<Error />}      // shown on init failure (receives Error prop)
+  errorComponent={(error) => <Error error={error} />}  // function form receives the Error; a static element does not
 >
   <App />
 </MidenProvider>
@@ -328,8 +328,11 @@ import { ParaSignerProvider } from "@miden-sdk/use-miden-para-react";
 ```
 
 ### useSigner() — Unified Interface
+Returns `SignerContextValue | null` — `null` in local-keystore mode (no signer provider mounted). Guard before destructuring.
 ```tsx
-const { isConnected, connect, disconnect, name } = useSigner();
+const signer = useSigner();
+if (!signer) return null; // local keystore mode
+const { isConnected, connect, disconnect, name } = signer;
 ```
 
 ### Custom Signer
@@ -353,9 +356,10 @@ toBech32AccountId("0x1234...");       // "miden1qy35..."
 const client = useMidenClient(); // throws if not ready
 const { runExclusive } = useMiden();
 
-// For operations not covered by hooks:
+// For operations not covered by hooks (use methods on the WebClient itself —
+// e.g. getSyncHeight, getAccount, getTransactions; getBlockHeaderByNumber lives on RpcClient, not here):
 await runExclusive(async () => {
-  const header = await client.getBlockHeaderByNumber(100);
+  const height = await client.getSyncHeight();
 });
 ```
 

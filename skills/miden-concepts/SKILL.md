@@ -71,7 +71,7 @@ A transaction is a **single-account state transition** with 4 phases:
 - **Word constructors**: `Word::new`, `Word::from([u32; 4])`, `Word::from([Felt; 4])`, `Word::try_from([u64; 4])`
 - **Current accessors**: `felt.as_canonical_u64()`, `word.as_elements()`, `word.into_elements()`, `word.as_bytes()`, `word.to_hex()`
 
-**WARNING**: Felt arithmetic is **modular**. Subtraction wraps around the prime. Always validate with `.as_canonical_u64()` before subtracting (`.as_u64()` in the JS/React SDK). See the rust-sdk-pitfalls skill (or frontend-pitfalls for the JS side) for details.
+**WARNING**: Felt arithmetic is **modular**. Subtraction wraps around the prime. Always validate with `.as_canonical_u64()` before subtracting (`.asInt()` in the JS/React SDK). See the rust-sdk-pitfalls skill (or frontend-pitfalls for the JS side) for details.
 
 ## Standard Note Patterns
 

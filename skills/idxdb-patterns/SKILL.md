@@ -148,8 +148,10 @@ Rules:
   represents the absence of a previous value (e.g. `oldSlotValue`,
   `oldAsset`, `oldValue` in the history tables)
 - Use `boolean` for flags, `number` for block heights and slot types
-- The account-header tables key on `id`. The storage / asset / map-entry
-  / foreign-code tables key on `accountId`. Don't confuse the two.
+- The LATEST account-header table keys on `id`; the HISTORICAL
+  account-header table keys on `accountCommitment` (with `id` and
+  `[id+replacedAtNonce]` as secondary indexes). The storage / asset /
+  map-entry / foreign-code tables key on `accountId`. Don't confuse the two.
 - The asset layer is two-word: `vaultKey` is the `ASSET_KEY` and `asset`
   is the encoded `ASSET_VALUE`. Don't fold them back into a single hex
   string.
