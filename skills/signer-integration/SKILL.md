@@ -37,16 +37,16 @@ const { para, wallet, isConnected } = useParaSigner();
 ```tsx
 import { TurnkeySignerProvider } from "@miden-sdk/miden-turnkey-react";
 
-// `config` is REQUIRED. `defaultOrganizationId` is required;
-// `apiBaseUrl` is optional (defaults to https://api.turnkey.com).
-// There is no environment-variable fallback — pass the org id explicitly.
-<TurnkeySignerProvider config={{ defaultOrganizationId: "your-org-id" }}>
+// `config` is OPTIONAL (`Partial<TurnkeySDKBrowserConfig>`). When omitted,
+// `apiBaseUrl` defaults to https://api.turnkey.com and `defaultOrganizationId`
+// is read from the `VITE_TURNKEY_ORG_ID` environment variable.
+<TurnkeySignerProvider>
   <MidenProvider config={{ rpcUrl: "testnet" }}>
     <App />
   </MidenProvider>
 </TurnkeySignerProvider>
 
-// Or override the API base URL:
+// Or with explicit config to override the defaults:
 <TurnkeySignerProvider config={{
   apiBaseUrl: "https://api.turnkey.com",
   defaultOrganizationId: "your-org-id",

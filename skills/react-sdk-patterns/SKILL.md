@@ -61,19 +61,21 @@ const { account, assets, getBalance, isLoading, error, refetch } = useAccount(ac
 ### useNotes(filter?)
 ```tsx
 const { notes, consumableNotes, noteSummaries, consumableNoteSummaries, isLoading, error, refetch } = useNotes();
-// notes — InputNoteRecord[]
-// consumableNotes — ConsumableNoteRecord[]
-// noteSummaries — NoteSummary[] (id, assets, sender)
-// consumableNoteSummaries — NoteSummary[]
+// notes — InputNoteRecord[] (filtered ONLY by `status`)
+// consumableNotes — ConsumableNoteRecord[] (filtered ONLY by `accountId`)
+// noteSummaries — NoteSummary[] (id, assets, sender) — also filtered by `sender` and `excludeIds`
+// consumableNoteSummaries — NoteSummary[] — also filtered by `sender` and `excludeIds`
 
-// Filter by account:
-const { notes } = useNotes({ accountId: "0x..." });
-// Filter by status:
+// Each filter option only narrows specific fields — destructure the one it affects:
+
+// `status` filters the returned `notes` (the only option that does):
 const { notes } = useNotes({ status: "committed" });  // "all" | "consumed" | "committed" | "expected" | "processing"
-// Filter by sender:
-const { notes } = useNotes({ sender: "0x..." });
-// Exclude specific notes:
-const { notes } = useNotes({ excludeIds: ["0xnote1", "0xnote2"] });
+// `accountId` filters `consumableNotes` (NOT `notes`):
+const { consumableNotes } = useNotes({ accountId: "0x..." });
+// `sender` filters only the summary arrays (NOT `notes`/`consumableNotes`):
+const { noteSummaries, consumableNoteSummaries } = useNotes({ sender: "0x..." });
+// `excludeIds` filters only the summary arrays:
+const { noteSummaries, consumableNoteSummaries } = useNotes({ excludeIds: ["0xnote1", "0xnote2"] });
 ```
 
 ### useNoteStream(options?)
@@ -347,8 +349,10 @@ formatAssetAmount(1000000n, 8)       // "0.01"
 parseAssetAmount("0.01", 8)           // 1000000n
 const summary = getNoteSummary(note); // { id, assets, sender }
 formatNoteSummary(summary);           // "1.5 TEST"
-toBech32AccountId("0x1234...");       // "miden1qy35..."
+toBech32AccountId("0x1234...");       // "mtst1..." (testnet HRP; defaults to testnet)
 ```
+
+The HRP is inferred from the configured `rpcUrl` and defaults to testnet: mainnet=`mm`, testnet=`mtst` (default), devnet=`mdev` — there is no `miden` HRP.
 
 ## Direct Client Access
 

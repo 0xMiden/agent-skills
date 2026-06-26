@@ -200,11 +200,11 @@ Vitest config externalizes `@miden-sdk/miden-wallet-adapter-react` to prevent br
 
 ## Automated Verification Pipeline
 
-The [frontend template](https://github.com/0xMiden/frontend-template) ships a `.claude/settings.json` that wires Claude Code hooks to enforce quality automatically:
+The [frontend template](https://github.com/0xMiden/frontend-template) ships a `.claude/settings.json` that wires Claude Code hooks to enforce quality automatically. All three checks live under a single `PostToolUse` matcher (`Edit|Write`) and fire on every `.ts`/`.tsx` edit in `src/` (the typecheck and affected-tests hooks early-exit otherwise); the template ships no `Stop` hook:
 
 1. **PostToolUse: typecheck** — `npx tsc -b --noEmit` on every `.ts`/`.tsx` edit in `src/`
 2. **PostToolUse: affected tests** — `npx vitest --changed --run` on every `.ts`/`.tsx` edit in `src/`
-3. **Stop hook** — Full `vitest --run && tsc -b --noEmit && vite build` before task completion
+3. **PostToolUse: full verification** — `npx vitest --run && npx tsc -b --noEmit && npx vite build` (same `Edit|Write` matcher), so the full suite + build run on each src edit rather than at task completion
 
 If any hook fails (exit code 2), the agent is blocked from proceeding until the issue is fixed. Copy the same hook layout into your own `.claude/settings.json` to get the same enforcement locally.
 
@@ -223,7 +223,7 @@ If any hook fails (exit code 2), the agent is blocked from proceeding until the 
    ↓
 6. Refactor if needed
    ↓
-7. Task complete       → Stop hook: full suite + build
+7. Task complete       → full suite + build runs on each src edit (PostToolUse)
 ```
 
 ## Common Mistakes

@@ -44,17 +44,19 @@ if balance.as_canonical_u64() > threshold.as_canonical_u64() { ... }
 
 **Rule**: For quantity/business logic, ALWAYS convert to `.as_canonical_u64()` before using comparison operators.
 
-## P3: Function Argument Limit (4 Words / 16 Felts)
+## P3: Direct Call Boundary Passes At Most 16 Stack Felts (4 Words)
 
-**Severity**: Medium — causes compilation errors
+**Severity**: Medium — overflow degrades to slower memory transfer; a hard error only fires for FPI imports
 
-Functions can receive at most 4 Words (16 Felts) as arguments.
+A direct cross-context / export call passes its parameters on the MASM operand stack, whose addressable window is 16 felts (4 Words, counting the canonical-ABI output pointer when present). This is NOT a universal compile error: for ordinary component functions, when the flattened parameters exceed 16 flat values *or* 16 stack felts, the compiler automatically transfers them through memory (Canonical-ABI input indirection) instead of failing. A 17-felt or 9×`i64` (18-felt) signature compiles fine — it just gets the slower indirect calling convention.
+
+A hard compile error fires only for **direct FPI imports** that lower to more than 16 operand-stack felts after expanding 64-bit values and result pointers.
 
 ```rust
-// PROBLEM — too many arguments
-fn process(a: Word, b: Word, c: Word, d: Word, e: Word) { ... } // > 4 Words!
+// COMPILES — flattens past 16 felts, so params move through memory (slower, not an error)
+fn process(a: Word, b: Word, c: Word, d: Word, e: Word) { ... }
 
-// SOLUTION — pass fat types by reference
+// PREFERRED — keep export / component-method footprints small, or pass aggregates by reference
 fn process(a: &Word, b: &Word, c: &Word, d: &Word, e: &Word) { ... }
 ```
 
@@ -92,13 +94,13 @@ Storage slot names follow a strict pattern. Getting it wrong often returns the d
 
 **Where the namespace segment comes from**: The `#[component]` macro derives the namespace from the Miden project package name — `[package] name` in your component's `miden-project.toml`, NOT from `Cargo.toml`. (Source: the macro loads `miden-project.toml` and uses `metadata.package.name()` as the storage namespace; see the caveat below.)
 
-**Conversion rule**: Any `@version` suffix on the package name is stripped, and characters outside `[A-Za-z0-9_]` are replaced with `_`. Because the project package name is conventionally already `snake_case`, the namespace segment usually equals it verbatim.
+**Conversion rule**: Any `@version` suffix on the package name is stripped, and characters outside `[A-Za-z0-9_]` are replaced with `_`. Project package names are conventionally kebab-case (e.g. `counter-contract`, `bank-account`), so the namespace segment is that name with hyphens (and any other non-`[A-Za-z0-9_]` char) replaced by `_` — it does NOT equal the package name verbatim (`counter-contract` → `counter_contract`). The component-struct segment is `snake_case(struct_name)`, which can differ from the package name (e.g. the bank's storage struct is `BankStorage` → `bank_storage`, not `bank_account`).
 
-| `miden-project.toml` `[package] name` | Component Struct | Field | Storage Slot Name |
-|---------------------------------------|------------------|-------|-------------------|
-| `counter_account` | `CounterContract` | `count_map` | `counter_account::counter_contract::count_map` |
-| `bank_account` | `BankAccount` | `balances` | `bank_account::bank_account::balances` |
-| `bank_account` | `BankAccount` | `initialized` | `bank_account::bank_account::initialized` |
+| `miden-project.toml` `[package] name` | Storage Struct | Field | Storage Slot Name |
+|---------------------------------------|----------------|-------|-------------------|
+| `counter-contract` | `CounterContract` | `count_map` | `counter_contract::counter_contract::count_map` |
+| `bank-account` | `BankStorage` | `balances` | `bank_account::bank_storage::balances` |
+| `bank-account` | `BankStorage` | `initialized` | `bank_account::bank_storage::initialized` |
 
 **Caveat (toolchain-version dependent)**: This naming is a property of the Rust SDK contract macros, which live in the `miden-base-macros` crate (v0.12.0, part of the v0.15 Rust SDK family alongside `miden`, `miden-base`, and `miden-base-sys`, all 0.12.0; the separate midenc/compiler workspace is versioned 0.8.1). The slot-naming algorithm — `namespace::snake_case(struct)::field`, with non-`[A-Za-z0-9_]` mapped to `_` and `@version` stripped — has been stable, but verify against your installed toolchain rather than assuming a protocol version.
 

@@ -82,7 +82,7 @@ The primary reference for all frontend development.
 - **`src/context/MidenProvider.tsx`** — Client initialization, sync loop, signer detection, runExclusive lock. Read this to understand initialization order. Note: `useMidenClient()` returns the `WasmWebClient` (aliased `WebClient`).
 - **`src/context/SignerContext.ts`** — External signer interface. Read this when implementing custom signers.
 - **`src/store/MidenStore.ts`** — Zustand store structure. Read this to understand cached state and what triggers re-renders.
-- **`src/utils/`** — Utility implementations (amounts, notes, bech32, runExclusive, accountParsing).
+- **`src/utils/`** — Utility implementations (amounts, notes, accountBech32, runExclusive, accountParsing).
 - **`src/types/index.ts`** — All TypeScript interfaces. The single source of truth for option types, result types, and configuration.
 - **`packages/react-sdk/examples/wallet/`** — Complete working wallet app. The most reliable reference for how to set up MidenProvider, create accounts, display balances, claim notes, and send tokens.
 
@@ -92,7 +92,7 @@ The primary reference for all frontend development.
 
 The Rust-to-WASM bridge that the React SDK wraps.
 
-- Contains the `WasmWebClient` struct (the `WebClient` returned by `useMidenClient()`) and all methods it exposes to JS
+- Contains the `WebClient` WASM struct, exported to JS as the `WasmWebClient` class (which react-sdk re-aliases to `WebClient`, the value returned by `useMidenClient()`) and all methods it exposes to JS
 - The standalone `RpcClient` struct (e.g. `getBlockHeaderByNumber`, `getNotesById`) lives here too, in `src/rpc_client/`, and is exported separately from `@miden-sdk/miden-sdk` — it is NOT reachable through `useMidenClient()`
 - JavaScript bindings in `js/` directory
 

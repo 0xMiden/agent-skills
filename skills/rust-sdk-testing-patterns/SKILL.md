@@ -11,7 +11,7 @@ These patterns target Miden **v0.15** (`miden-protocol`/`miden-standards`/`miden
 
 Tests go in `integration/tests/`. All tests are async and use MockChain for local execution without a network.
 
-See `integration/tests/counter_test.rs` in [project-template](https://github.com/0xMiden/project-template) for a complete working test covering imports, MockChain setup, contract building, account creation with storage, note creation, transaction execution, and storage verification. The template lags the protocol release: confirm it is on the 0.15 line before copying APIs (older revisions use the removed v0.14 types `AccountStorageMode`, `AuthSchemeId`, and `AccountType::RegularAccountImmutableCode`).
+See `integration/tests/counter_test.rs` in [project-template](https://github.com/0xMiden/project-template) for a complete working test covering imports, MockChain setup, contract building, account creation with storage, note creation, transaction execution, and storage verification. The template lags the protocol release: confirm it is on the 0.15 line before copying APIs (older revisions use the removed v0.14 types `AccountStorageMode` and `AccountType::RegularAccountImmutableCode`, and a stale storage-slot naming format — see Step 5).
 
 ## Step-by-Step Test Pattern
 
@@ -21,15 +21,15 @@ Start from `let mut builder = MockChain::builder();` (see `integration/tests/cou
 
 ### 2. Create Sender/Wallet Accounts
 
-See `integration/tests/counter_test.rs` in [project-template](https://github.com/0xMiden/project-template) for the basic wallet pattern. For wallets with pre-funded assets, use `builder.add_existing_wallet_with_assets(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Poseidon2 }, [FungibleAsset::new(faucet.id(), 100)?.into()])`.
+See `integration/tests/counter_test.rs` in [project-template](https://github.com/0xMiden/project-template) for the basic wallet pattern. For wallets with pre-funded assets, use `builder.add_existing_wallet_with_assets(Auth::BasicAuth { auth_scheme: AuthSchemeId::Falcon512Poseidon2 }, [FungibleAsset::new(faucet.id(), 100)?.into()])`.
 
-> v0.15: the auth scheme enum is `AuthScheme` (the v0.14 name `AuthSchemeId` was removed). The variant `Falcon512Poseidon2` is unchanged.
+> v0.15 auth-scheme naming: `miden_client::auth` re-exports the **same** protocol enum under **two** names — `AuthScheme` (the protocol name) and `AuthSchemeId` (an alias; this is the name the canonical tutorials use). Both compile; the field is `Auth::BasicAuth { auth_scheme }`. The variant `Falcon512Poseidon2` is the same on both. The examples here use `AuthSchemeId::Falcon512Poseidon2` to match the tutorials.
 
 ### 3. Set Up Faucets (for fungible assets)
 ```rust
 let faucet = builder.add_existing_basic_faucet(
     Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
+        auth_scheme: AuthSchemeId::Falcon512Poseidon2,
     },
     "TOKEN",     // token symbol
     1000,        // max supply
@@ -47,14 +47,21 @@ See `integration/tests/counter_test.rs` in [project-template](https://github.com
 
 **Storage slot naming convention** (CRITICAL):
 ```
-[component_package_or_name]::[snake_case(component_struct)]::[field_name]
+<package_name>::<interface_segment>::<field_name>
 ```
 
-Examples:
-- Package `miden:counter-account`, component `CounterContract`, field `count_map` -> `miden_counter_account::counter_contract::count_map`
-- Package `miden:bank-account`, component `BankAccount`, field `balances` -> `miden_bank_account::bank_account::balances`
+The slot name is part of the on-chain storage ABI and is derived by the compiler's `#[component_storage]` macro, **not** from the Rust struct name:
+- `<package_name>` is the **bare** package name (`[package].name`), with no `miden:` org prefix.
+- `<interface_segment>` is the `[lib].namespace` **interface** segment — the text between the last `/` and the `@` in the namespace — snake_cased. Because it comes from the declared namespace, renaming the Rust struct cannot change the deployed slot name.
+- `<field_name>` is the field name.
 
-Rule: Replace characters outside `[A-Za-z0-9_]` with `_` in the package or component name.
+Characters outside `[A-Za-z0-9_]` are replaced with `_` in each segment.
+
+Example: package `bank-account` with `[lib].namespace = "miden:bank-account/bank@0.1.0"` and struct `BankStorage` (fields `initialized`, `balances`) yields slots:
+- `bank_account::bank::initialized`
+- `bank_account::bank::balances`
+
+Note the middle segment is `bank` (the interface segment), **not** `bank_storage` (the struct) and **not** `bank_account`, and there is no `miden_` org prefix. The `miden_counter_account::counter_contract::count_map` style seen in older `project-template` revisions is the **stale v0.14** format (those revisions have no `miden-project.toml` and pin `miden-client = "0.14"`); do not copy it for v0.15.
 
 Populate `InitStorageData`, build the component from the compiled package, then register the account with `builder.add_account_from_builder(...)`:
 
@@ -67,7 +74,7 @@ let counter_component =
     AccountComponent::from_package(&contract_package, &init_storage_data)?;
 let counter_account = builder.add_account_from_builder(
     Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
+        auth_scheme: AuthSchemeId::Falcon512Poseidon2,
     },
     AccountBuilder::new([3_u8; 32])
         .account_type(AccountType::Public)
@@ -85,7 +92,7 @@ For a single-value contract slot (paired with `StorageValue<T>` on-chain) instea
 ```rust
 let mut init_storage_data = InitStorageData::default();
 init_storage_data.insert_value(
-    "miden_bank_account::bank_account::initialized",
+    "bank_account::bank::initialized",
     0_u64,
 )?;
 ```
@@ -121,6 +128,9 @@ See `integration/tests/counter_test.rs` in [project-template](https://github.com
 The full execution flow is `build_tx_context` -> `execute()` -> `add_pending_executed_transaction()` -> `prove_next_block()` (see `integration/tests/counter_test.rs` in [project-template](https://github.com/0xMiden/project-template)). For the default MockChain flow, do not call `apply_delta()`; fetch refreshed state from `mock_chain.committed_account(...)` after the block is proven.
 
 ### 9. Execute with Transaction Script
+
+A compiler project with `kind = "tx-script"` compiles to a `TransactionScript`-kind package, **not** an `Executable`. Because of that, `TransactionScript::from_package` and `Package::unwrap_program` do **not** apply to it: `from_package` calls `package.try_into_program()`, which returns `Err` for a non-executable package, and `unwrap_program` asserts the kind is `Executable` and **panics**. Build the script from the package's MAST forest plus its entry export instead:
+
 ```rust
 use miden_client::transaction::TransactionScript;
 
@@ -128,7 +138,10 @@ let tx_script_package = Arc::new(build_project_in_dir(
     Path::new("../contracts/my-tx-script"),
     true,
 )?);
-let tx_script = TransactionScript::from_package(&tx_script_package)?;
+
+// Locate the entry export ("main"/"run", or the sole export) and build from parts.
+// See examples/miden-bank/integration/src/helpers.rs `build_tx_script_from_package`.
+let tx_script = build_tx_script_from_package(tx_script_package.as_ref())?;
 
 let executed = mock_chain
     .build_tx_context(account.clone(), &[], &[])?
@@ -143,7 +156,9 @@ mock_chain.prove_next_block()?;
 let updated_account = mock_chain.committed_account(account.id())?;
 ```
 
-> v0.15: prefer `TransactionScript::from_package(&package)?` to build a script directly from the compiled package. If you instead use the (`#[doc(hidden)]`) `unwrap_program()`, note it returns a `Program` by value, so do **not** deref/clone it: `TransactionScript::new(tx_script_package.unwrap_program())`.
+The helper essentially does `TransactionScript::from_parts(package.mast.mast_forest().clone(), entrypoint)` after finding the entry procedure's root in the MAST forest.
+
+> v0.15: reserve `TransactionScript::from_package(&package)?` (and the `#[doc(hidden)]` `unwrap_program()`) for packages that are genuinely `Executable`. For `kind = "tx-script"` compiler packages, use `from_parts` / the `build_tx_script_from_package` helper as above — `from_package` returns an error and `unwrap_program()` panics on them.
 
 ### 10. Verify Storage State
 
@@ -181,7 +196,7 @@ let executed = tx_context.execute().await?;
 
 For contracts requiring initialization before use, each step usually needs its own `execute()` → `add_pending_executed_transaction()` → `prove_next_block()` cycle. Fetch the committed account or note state from `mock_chain` between steps before building the next context.
 
-`apply_delta()` is only needed in advanced same-block tests that intentionally reuse an in-memory `Account` across multiple transactions before proving the block.
+`apply_delta()` is needed whenever you keep reading from / reusing the **same in-memory `Account`** across transactions — whether they land in the same block or in separate blocks. The canonical bank tests call `account.apply_delta(&executed.account_delta())?` after every `execute()` (each followed by `add_pending_executed_transaction` + `prove_next_block`) precisely so later local reads like `account.storage().get_map_item(...)` see the latest state. If you instead re-fetch via `mock_chain.committed_account(...)` after `prove_next_block()`, you can skip `apply_delta()` (as the single-transaction counter test does).
 
 See [miden-bank withdraw_test.rs](https://github.com/0xMiden/tutorials/blob/main/examples/miden-bank/integration/tests/withdraw_test.rs) for a complete multi-transaction test demonstrating: initialize bank → deposit assets → withdraw assets (3 sequential transactions with state verification between each step).
 
@@ -213,15 +228,16 @@ See `integration/Cargo.toml` in [project-template](https://github.com/0xMiden/pr
 ## Validation Checklist
 
 - [ ] Test function is `async` and uses `#[tokio::test]`
-- [ ] Auth uses `AuthScheme` (not the removed `AuthSchemeId`)
+- [ ] Auth uses `AuthSchemeId::Falcon512Poseidon2` (or the equivalent `AuthScheme::Falcon512Poseidon2` — both name the same protocol enum)
 - [ ] `AccountBuilder` uses `.account_type(AccountType::Public | ::Private)` and no `.storage_mode(...)`
-- [ ] Storage slot names follow `package_or_name::component_struct::field_name` pattern
+- [ ] Storage slot names follow `<package_name>::<interface_segment>::<field_name>` (bare package name, `[lib].namespace` interface segment, e.g. `bank_account::bank::balances`) — not the stale v0.14 `miden_..._account::struct::field` format
 - [ ] All contracts built before account/note creation
 - [ ] Account storage seeded via `InitStorageData`
 - [ ] `NoteScript::root()` converted with `.into()` before seeding `RandomCoin`
 - [ ] Note-storage felts built with infallible `Felt::from(_u32)` (v0.15 `Felt::new(u64)` returns `Result`, so a bare `[Felt::new(..)]` array does not satisfy `Item = Felt`)
 - [ ] `Note::new(...)` is passed a `PartialNoteMetadata` (not `NoteMetadata`)
+- [ ] `kind = "tx-script"` packages built with `from_parts` / `build_tx_script_from_package` (not `from_package`/`unwrap_program`, which error/panic on them)
 - [ ] `prove_next_block()` called after `add_pending_executed_transaction()`
-- [ ] Post-block assertions read state from `mock_chain.committed_account(...)` or other committed chain views
+- [ ] Post-block assertions read state from `mock_chain.committed_account(...)` (or `account.apply_delta(...)` is called when reusing an in-memory `Account` across transactions)
 - [ ] Notes added to `MockChainBuilder` via `add_output_note(RawOutputNote::Full(...))` before `build()`
 - [ ] Faucet set up before creating assets

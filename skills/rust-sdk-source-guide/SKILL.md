@@ -76,19 +76,20 @@ Clone these repos alongside your project for reference. Claude will explore them
 
 ```bash
 # Required: protocol layer — standard note types and account components (crate: miden-protocol)
-git clone --depth 1 --branch main https://github.com/0xMiden/protocol.git ../protocol
+git clone --branch main https://github.com/0xMiden/protocol.git ../protocol
 
 # Required: contains SDK, compiler, and 12 working examples
-git clone --depth 1 --branch main https://github.com/0xMiden/compiler.git ../compiler
+# NOTE: clone the compiler from `next` (its `main` is far behind and not v0.15-aligned — see note below)
+git clone --branch next https://github.com/0xMiden/compiler.git ../compiler
 
 # Required: Rust SDK / client API for deployment and chain interaction
-git clone --depth 1 --branch main https://github.com/0xMiden/rust-sdk.git ../rust-sdk
+git clone --branch main https://github.com/0xMiden/rust-sdk.git ../rust-sdk
 
 # Recommended: complete working banking app with advanced patterns in the `examples/miden-bank` folder of the tutorials repo
 git clone --branch main https://github.com/0xMiden/tutorials.git ../tutorials
 ```
 
-**Note**: These commands clone the stable `main` branch. Only use `--branch next` if the user explicitly requests the experimental/upcoming version of the compiler or source repos.
+**Note**: For v0.15 work the **compiler must be cloned from `next`, not `main`** — despite the name, `next` is the compiler's default branch and carries the v0.15-aligned protocol/assembly dependencies and SDK bindings. The compiler's `main` branch is far behind (v0.13-era protocol) and its SDK emits a link reference to the old `note::build_recipient` protocol procedure, which was renamed to `note::compute_and_store_recipient` in protocol v0.15 — building a v0.15 contract against compiler `main` therefore fails to link. (Note that compiler `next` still exposes `note::build_recipient` as a retained SDK alias for `compute_and_store_recipient`, so the API examples below resolve there.) The other repos are fine on `main` today: `protocol`, `rust-sdk`, and `tutorials` `main` currently resolve to v0.15.x. `--depth 1` is intentionally omitted so you can switch branches later if needed.
 
 ### `compiler/` — The Rust-to-MASM Compiler
 
