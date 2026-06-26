@@ -338,7 +338,7 @@ const { isConnected, connect, disconnect, name } = signer;
 ```
 
 ### Custom Signer
-Implement `SignerContextValue` interface via `SignerContext.Provider`. Requires: `name`, `storeName` (unique per user for DB isolation), `accountConfig`, `signCb`, `connect`, `disconnect`. See `frontend-source-guide` skill for source references.
+Implement `SignerContextValue` interface via `SignerContext.Provider`. Requires: `name`, `storeName` (unique per user for DB isolation), `accountConfig`, `signCb`, `isConnected`, `connect`, `disconnect`. See `frontend-source-guide` skill for source references.
 
 ## Utility Functions
 
@@ -348,7 +348,7 @@ import { formatAssetAmount, parseAssetAmount, getNoteSummary, formatNoteSummary,
 formatAssetAmount(1000000n, 8)       // "0.01"
 parseAssetAmount("0.01", 8)           // 1000000n
 const summary = getNoteSummary(note); // { id, assets, sender }
-formatNoteSummary(summary);           // "1.5 TEST"
+formatNoteSummary(summary);           // "1.5 TEST from mtst1..." (the " from <sender>" suffix is appended whenever the summary has a sender)
 toBech32AccountId("0x1234...");       // "mtst1..." (testnet HRP; defaults to testnet)
 ```
 

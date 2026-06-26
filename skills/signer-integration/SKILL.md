@@ -37,16 +37,19 @@ const { para, wallet, isConnected } = useParaSigner();
 ```tsx
 import { TurnkeySignerProvider } from "@miden-sdk/miden-turnkey-react";
 
-// `config` is OPTIONAL (`Partial<TurnkeySDKBrowserConfig>`). When omitted,
-// `apiBaseUrl` defaults to https://api.turnkey.com and `defaultOrganizationId`
-// is read from the `VITE_TURNKEY_ORG_ID` environment variable.
-<TurnkeySignerProvider>
+// `config` is REQUIRED, and `defaultOrganizationId` is required within it.
+// Type: Pick<TurnkeySDKBrowserConfig, "defaultOrganizationId">
+//       & Partial<Omit<TurnkeySDKBrowserConfig, "defaultOrganizationId">>
+// — only the other fields (e.g. `apiBaseUrl`) are optional; `apiBaseUrl`
+// defaults to https://api.turnkey.com. There is NO env-var fallback for the
+// org id (the provider does not read `VITE_TURNKEY_ORG_ID`).
+<TurnkeySignerProvider config={{ defaultOrganizationId: "your-org-id" }}>
   <MidenProvider config={{ rpcUrl: "testnet" }}>
     <App />
   </MidenProvider>
 </TurnkeySignerProvider>
 
-// Or with explicit config to override the defaults:
+// Or override the apiBaseUrl default:
 <TurnkeySignerProvider config={{
   apiBaseUrl: "https://api.turnkey.com",
   defaultOrganizationId: "your-org-id",
@@ -54,6 +57,8 @@ import { TurnkeySignerProvider } from "@miden-sdk/miden-turnkey-react";
   ...
 </TurnkeySignerProvider>
 ```
+
+`TurnkeySignerProvider` also accepts optional `customComponents` and `importAccountId` props, which it forwards into `accountConfig` (see "Custom Account Components").
 
 Connect via passkey:
 ```tsx
@@ -97,11 +102,13 @@ With `MidenFiSignerProvider` in place, use `useSigner()` from the React SDK to m
 
 ### Frontend-template-specific MidenFi pattern
 
-The [frontend template](https://github.com/0xMiden/frontend-template) deviates from the generic `useSigner()` approach in two places — worth knowing because it's a pattern you'll likely want when the wallet extension is the primary signer:
+The [frontend template](https://github.com/0xMiden/frontend-template) (now on web-sdk 0.15 — `@miden-sdk/miden-sdk@0.15.2`, `@miden-sdk/react@0.15.2`, wallet adapters `0.15.1`) deviates from the generic patterns above in three places worth knowing when the wallet extension is the primary signer:
 
-- **Wallet button uses `useMidenFiWallet()` + `WalletReadyState`** — see `src/components/AppContent.tsx` in the frontend template. The button gates on `wallet.readyState` so it can render a disabled "Install MidenFi Wallet" state before the extension is detected. `useSigner().connect()` would silently fall through to the adapter's `window.open(adapter.url, ...)` install fallback (Chrome Web Store → Play Store redirect on some platforms); gating on `readyState` avoids that path entirely.
-- **Custom transaction flow calls `wallet.requestTransaction(...)` directly** — see `src/hooks/useIncrementCounter.ts` in the frontend template. The counter increment builds a bespoke transaction request (via `TransactionRequestBuilder` with a custom `Note`) and hands it to the wallet (wrapped in `Transaction.createCustomTransaction(...)`) for signing + submission. The React SDK mutation hooks (`useSend`, `useConsume`, ...) don't cover this kind of custom note construction, and the tx is submitted by the wallet rather than the local client — so `useWaitForCommit` doesn't apply either.
-  - **Heads up: the published frontend template is still on web-sdk 0.14** (`@miden-sdk/miden-sdk@0.14.x`) and its note-construction code uses removed-in-0.15 APIs — notably `NoteAttachment.newNetworkAccountTarget(...)` and `new NoteMetadata(...).withAttachment(attachment)`. On the 0.15 surface neither exists: `NoteAttachment.newNetworkAccountTarget` (and the old `newWord`/`newArray`/`asWord`/`asArray` accessors) were removed, and the JS `NoteMetadata` constructor is now attachment-less (`new NoteMetadata(sender, noteType, tag)`) with `withAttachment()`/`attachment()`/`withTag()` removed. Build attachments with `NoteAttachment.fromWord(scheme, word)` / `NoteAttachment.fromWords(scheme, words)` (read back via `.toWords()`). The JS `Note` constructor signature is unchanged — `new Note(assets, metadata, recipient)` still takes a `NoteMetadata` (it reconstructs a `PartialNoteMetadata` internally), so the breakage is the attachment APIs, not the `Note` constructor. Treat the template's note-building snippet as a 0.14 pattern to port, not a 0.15 reference.
+- **Provider order is INVERTED: `MidenProvider` runs OUTSIDE `MidenFiSignerProvider`** — see `src/providers.tsx`. This is the opposite of the canonical signer-outer / Miden-inner nesting at the top of this skill, and it is deliberate. In v0.15, when a signer provider is an *ancestor* of `MidenProvider`, `MidenProvider` treats it as its external keystore and does NOT create the `WebClient` until the signer connects (the init effect sees `signerIsConnected === false` and returns early before building the client). With a wallet that hasn't connected — or any environment without the extension — the app would hang on "Initializing…" and even public reads couldn't run. The template never signs *through* `MidenProvider` (its only write goes via the wallet's `requestTransaction`), so it runs `MidenProvider` in local-keystore mode (no signer ancestor → it initializes immediately, reads work pre-connect) and keeps `MidenFiSignerProvider` *inside*, purely for the connect button and the wallet's `requestTransaction`. `MidenFiSignerProvider` works standalone (it provides its own `WalletContext` + `SignerContext`; no `MultiSignerProvider` needed). Use this inversion only when you do not sign through `MidenProvider`; if external-keystore signing IS the goal, keep the canonical signer-outer order so `MidenProvider` picks up the signer's `signCb`/`accountConfig`.
+- **Wallet button uses `useMidenFiWallet()` + `WalletReadyState`** — see `src/components/AppContent.tsx`. The button gates on `wallet?.readyState` (rendering a disabled "Install MidenFi Wallet" state unless `readyState` is `Installed` or `Loadable`) so it can show install state before the extension is detected. `useSigner().connect()` would silently fall through to the adapter's `window.open(adapter.url, ...)` install fallback; gating on `readyState` avoids that path.
+- **Custom transaction flow calls `requestTransaction(...)` directly** — see `src/hooks/useIncrementCounter.ts`. It reads `address` / `connected` / `requestTransaction` off `useMidenFiWallet()`, builds a bespoke request (`TransactionRequestBuilder` with a custom `Note`), wraps it in `Transaction.createCustomTransaction(...)`, and hands it to the wallet for signing + submission. The React SDK mutation hooks (`useSend`, `useConsume`, ...) don't cover this custom note construction, and the tx is submitted by the wallet rather than the local client — so `useWaitForCommit` doesn't apply (the template polls the counter's storage map instead).
+  - **The v0.15 note APIs in that hook (use as the reference):** the JS `NoteMetadata` constructor is attachment-less — `new NoteMetadata(sender, noteType, tag)` (the old `withAttachment()`/`attachment()`/`withTag()` are gone). `new Note(assets, metadata, recipient)` is unchanged. The pre-0.15 `NoteAttachment.newNetworkAccountTarget(...)` was removed; v0.15 builds attachments with `NoteAttachment.fromWord(scheme, word)` / `NoteAttachment.fromWords(scheme, words)` (read back via `.toWords()`), or `createNoteAttachment(...)` from `@miden-sdk/react`.
+  - **Heads up: the template ships this write path DISABLED on v0.15** (`INCREMENT_ONCHAIN_BLOCKED = true` in `src/config.ts`). A network-executed custom-script note needs a `NetworkAccountTarget` attachment, and while v0.15 can *build* that attachment, the web SDK exposes no way to *attach* one to a custom-script note — only `Note.createP2IDNote`/`createP2IDENote` accept an attachment (and those force the P2ID script). So the template surfaces the blocker instead of submitting a doomed, fee-bearing tx. Treat the increment as the correct v0.15 *construction* reference, but note the network-targeting step is pending an upstream web-SDK entry point.
 
 ## Unified Signer Interface
 

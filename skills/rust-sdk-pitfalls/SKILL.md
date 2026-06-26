@@ -71,14 +71,36 @@ The old `Value` / untyped `StorageMap` API is gone. Account storage is now:
 - `get()` / `set()` methods instead of `.read()` / `.write()`
 - `K: WordKey`, `T: WordValue`, `V: WordValue`
 
+A v0.15 account component is written in **three parts**, and `#[component]` no longer applies to a struct. Annotate the storage struct with `#[component_storage]`, the API `trait` with `#[component]`, and the `impl Trait for Storage` block with `#[component]`:
+
 ```rust
-#[component]
-struct CounterContract {
+// 1. Storage struct — annotated #[component_storage], NOT #[component].
+//    Applying #[component] to a struct is now a hard compile error.
+#[component_storage]
+struct CounterContractStorage {
     #[storage(description = "single typed slot")]
     counter: StorageValue<Felt>,
 
     #[storage(description = "typed map")]
-    balances: StorageMap<AccountId, Felt>,
+    balances: StorageMap<Word, Felt>,
+}
+
+// 2. API trait — defines the exported interface.
+#[component]
+trait CounterContract {
+    fn get_count(&self) -> Felt;
+    fn increment_count(&mut self) -> Felt;
+}
+
+// 3. Implementation — the behavior, wired to the storage struct.
+#[component]
+impl CounterContract for CounterContractStorage {
+    fn get_count(&self) -> Felt { self.counter.get() }
+    fn increment_count(&mut self) -> Felt {
+        let next = self.counter.get() + felt!(1);
+        self.counter.set(next);
+        next
+    }
 }
 ```
 
@@ -90,19 +112,23 @@ If you need custom keys or values, implement `WordKey` / `WordValue` by converti
 
 Storage slot names follow a strict pattern. Getting it wrong often returns the default value silently.
 
-**Pattern**: `[package_name]::[snake_case(component_struct)]::[field_name]`
+**Pattern**: `[package_name]::[namespace_interface_segment]::[field_name]`
 
-**Where the namespace segment comes from**: The `#[component]` macro derives the namespace from the Miden project package name — `[package] name` in your component's `miden-project.toml`, NOT from `Cargo.toml`. (Source: the macro loads `miden-project.toml` and uses `metadata.package.name()` as the storage namespace; see the caveat below.)
+**Where the segments come from**: The `#[component_storage]` macro (NOT `#[component]`) processes the `#[storage]` fields and derives slot names. It loads `miden-project.toml` (next to your `Cargo.toml`, NOT `Cargo.toml` itself):
 
-**Conversion rule**: Any `@version` suffix on the package name is stripped, and characters outside `[A-Za-z0-9_]` are replaced with `_`. Project package names are conventionally kebab-case (e.g. `counter-contract`, `bank-account`), so the namespace segment is that name with hyphens (and any other non-`[A-Za-z0-9_]` char) replaced by `_` — it does NOT equal the package name verbatim (`counter-contract` → `counter_contract`). The component-struct segment is `snake_case(struct_name)`, which can differ from the package name (e.g. the bank's storage struct is `BankStorage` → `bank_storage`, not `bank_account`).
+- **First segment** = `[package] name`.
+- **Middle segment** = the *interface segment* of the `[lib] namespace` value. The namespace is a fully-qualified component id `namespace:package/interface@version`; the interface segment sits between the last `/` and the `@`. This is deliberately decoupled from the Rust storage-struct name, so renaming the private struct cannot change deployed slot names. The struct name (`BankStorage`, `CounterContractStorage`, …) does NOT appear in the slot name.
+- **Last segment** = the `#[storage]` field name.
 
-| `miden-project.toml` `[package] name` | Storage Struct | Field | Storage Slot Name |
-|---------------------------------------|----------------|-------|-------------------|
-| `counter-contract` | `CounterContract` | `count_map` | `counter_contract::counter_contract::count_map` |
-| `bank-account` | `BankStorage` | `balances` | `bank_account::bank_storage::balances` |
-| `bank-account` | `BankStorage` | `initialized` | `bank_account::bank_storage::initialized` |
+**Conversion rule**: Each segment is sanitized — any `@version` suffix is stripped, the interface segment is passed through `snake_case`, and characters outside `[A-Za-z0-9_]` are replaced with `_` (an empty or leading-`_` segment is prefixed with `x`). Project package names are conventionally kebab-case (e.g. `counter-contract`, `bank-account`), so the first segment is that name with hyphens replaced by `_` — it does NOT equal the package name verbatim (`counter-contract` → `counter_contract`).
 
-**Caveat (toolchain-version dependent)**: This naming is a property of the Rust SDK contract macros, which live in the `miden-base-macros` crate (v0.12.0, part of the v0.15 Rust SDK family alongside `miden`, `miden-base`, and `miden-base-sys`, all 0.12.0; the separate midenc/compiler workspace is versioned 0.8.1). The slot-naming algorithm — `namespace::snake_case(struct)::field`, with non-`[A-Za-z0-9_]` mapped to `_` and `@version` stripped — has been stable, but verify against your installed toolchain rather than assuming a protocol version.
+| `[package] name` | `[lib] namespace` | Field | Storage Slot Name |
+|------------------|-------------------|-------|-------------------|
+| `counter-contract` | `miden:counter-contract/miden-counter-contract@0.1.0` | `count_map` | `counter_contract::miden_counter_contract::count_map` |
+| `bank-account` | `miden:bank-account/bank@0.1.0` | `balances` | `bank_account::bank::balances` |
+| `bank-account` | `miden:bank-account/bank@0.1.0` | `initialized` | `bank_account::bank::initialized` |
+
+**Caveat (toolchain-version dependent)**: This naming is a property of the Rust SDK contract macros, which live in the `miden-base-macros` crate (v0.12.0, part of the v0.15 Rust SDK family alongside `miden` and `miden-base`, all 0.12.0; the separate midenc/compiler workspace is versioned 0.8.1). The slot-naming algorithm — `package_name::snake_case(interface_segment)::field`, with non-`[A-Za-z0-9_]` mapped to `_` and `@version` stripped — has been stable, but verify against your installed toolchain rather than assuming a protocol version.
 
 ## P6: No-std Environment
 
@@ -218,7 +244,7 @@ See [miden-bank bank-account](https://github.com/0xMiden/tutorials/blob/main/exa
 
 Note scripts cannot call `native_account::add_asset()` or other `native_account::` functions directly. The kernel's `authenticate_account_origin` check rejects these calls from a note context. Instead, note scripts must call an account component method, which then calls `native_account::add_asset()` internally.
 
-See [miden-bank deposit-note](https://github.com/0xMiden/tutorials/blob/main/examples/miden-bank/contracts/deposit-note/src/lib.rs) for the correct pattern: the note script calls `bank_account::deposit()`, which internally calls `native_account::add_asset()`.
+See [miden-bank deposit-note](https://github.com/0xMiden/tutorials/blob/main/examples/miden-bank/contracts/deposit-note/src/lib.rs) for the correct pattern: the note script declares the consuming account via `#[account(bank_account::Bank)] pub struct Wallet;` and, inside `#[note_script] fn run(self, _arg: Word, account: &mut Wallet)`, calls `account.deposit(depositor, asset)` on that wrapper. The `deposit()` component method then calls `native_account::add_asset()` internally. It is NOT a free `bank_account::deposit()` call.
 
 ## P12: Note Inputs Are Immutable After Creation
 

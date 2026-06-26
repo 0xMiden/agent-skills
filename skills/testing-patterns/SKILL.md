@@ -43,7 +43,7 @@ it("shows empty state", () => {
 ### Default mock return values
 
 **Query hooks** return populated data by default:
-- `useAccounts()` — returns `accounts` (e.g. 3 account headers); `wallets` mirrors `accounts` and `faucets` is always `[]` in v0.15 (protocol 0.15 removed faucet-vs-wallet from the account id, so both fields are deprecated). Detect faucet-ness per-account from its components, not from a `faucets` array. The override example above already models this correctly (`wallets: [], faucets: []`).
+- `useAccounts()` — default mock returns `accounts` (3 headers), `wallets` (2 wallet headers), and `faucets` (1 faucet header). The template mock intentionally keeps the `wallets`/`faucets` split populated so the query-hook pattern can exercise both lists. NOTE: the real v0.15 hook deprecates these fields — it returns `wallets: accounts` and `faucets: []` (protocol 0.15 removed faucet-vs-wallet from the account id, so accounts can't be split from headers alone); detect faucet-ness per-account from its components, not from a `faucets` array. The override example above (`wallets: [], faucets: []`) is a valid manual override but is NOT the default mock.
 - `useAccount()` — account with 10.0 TEST token balance
 - `useNotes()` — 1 input note, 1 consumable note
 - `useSyncState()` — syncHeight: 12345, not syncing
