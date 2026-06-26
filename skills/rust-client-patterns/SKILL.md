@@ -277,8 +277,16 @@ and wraps it into `StoreBuilder::Store`.
 
 Provide network-specific constructors: `for_testnet()`, `for_devnet()`,
 `for_localhost()`. Each returns `Self` synchronously and pre-fills the RPC
-endpoint, default prover, and RNG appropriate for that network. Only `build()`
-is async (it constructs the client from the configured components):
+endpoint for that network. `for_testnet()` and `for_devnet()` additionally
+pre-fill a remote prover and the note-transport endpoint; `for_localhost()`
+sets *only* the RPC endpoint (leaving the prover to fall back to the default
+local prover at `build()` time, and configuring no note transport). The RNG is
+*not* network-specific and is *not* set by any of these constructors — it is
+left unset (`Default` leaves `rng: None`) and resolved at `build()` time, where
+a user-supplied RNG is used if present, otherwise a seed-based `ClientRng` is
+created from `rand::rng()`. The default prover, when unset, resolves to a
+`LocalTransactionProver` at `build()`. Only `build()` is async (it constructs
+the client from the configured components):
 
 ```rust
 let client = ClientBuilder::for_testnet()
@@ -305,7 +313,7 @@ let vault_root     = reader.vault_root().await?;
 let storage_root   = reader.storage_commitment().await?;
 let code_root      = reader.code_commitment().await?;
 
-// Iterator over consumable input notes
+// Iterator over consumed input notes (NoteFilter::Consumed; on-chain consumption order)
 let mut notes = client.input_note_reader(consumer_account_id);
 while let Some(note) = notes.next().await? {
     // process each InputNoteRecord

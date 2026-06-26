@@ -10,10 +10,10 @@ description: Critical pitfalls and safety rules for Miden frontend development. 
 Components that use Miden hooks before MidenProvider finishes WASM initialization will crash.
 
 ```tsx
-// WRONG — crashes if WASM not ready
+// WRONG — renders empty before WASM is ready
 function App() {
-  const { data } = useAccounts(); // throws before init
-  return <div>{data?.wallets.length}</div>;
+  const { accounts } = useAccounts(); // returns empty arrays before WASM is ready
+  return <div>{accounts.length}</div>;
 }
 
 // CORRECT — use loadingComponent or check isReady
@@ -58,7 +58,7 @@ Built-in hooks (useSend, useConsume, etc.) already use runExclusive internally. 
 
 WASM SharedArrayBuffer requires these headers. Without them, WASM init silently fails.
 
-The [frontend template](https://github.com/0xMiden/frontend-template)'s source-of-truth pattern is to opt into COOP/COEP via the Vite plugin explicitly:
+Opt into COOP/COEP via the Vite plugin explicitly on any route that runs Miden client code:
 
 ```ts
 // in your app's vite.config.ts
@@ -69,29 +69,34 @@ export default defineConfig({
 });
 ```
 
-Do not rely on the plugin's own default — `@miden-sdk/vite-plugin` defaults `crossOriginIsolation` to `false`, and that default has shifted across releases. Pass `true` explicitly on any route that runs Miden client code.
+Do not rely on the plugin's own default — `@miden-sdk/vite-plugin` defaults `crossOriginIsolation` to `false` (verified false in every v0.14–v0.15 tag of the executable source; note the plugin README incorrectly says the default is `true`). Pass `true` explicitly. The SDK's shipped example wallet deliberately omits this argument (`midenVitePlugin()`) because it pairs with `paraVitePlugin()` for Para OAuth, and `same-origin` COOP nullifies `window.opener` in OAuth popups — so isolation must stay OFF there. Your own app, if it runs Miden client code on a route, must opt in.
 
-COOP/COEP must also be set on the production server — the plugin only covers the Vite dev server. See `vite-wasm-setup` for per-host configs (Nginx, Vercel, Cloudflare).
+COOP/COEP must also be set on the production server — the plugin covers the Vite dev and preview servers, not your real production host. See `vite-wasm-setup` for per-host configs (Nginx, Vercel, Cloudflare).
 
-**Gotcha (opt-out path)**: Cross-origin-isolation breaks third-party iframes, external scripts without CORS, and OAuth popups. If a route must host those and cannot use Miden client code, either (a) use `Cross-Origin-Embedder-Policy: credentialless` for weaker isolation that still allows most cross-origin resources, or (b) scope `crossOriginIsolation: false` to that specific route and accept that Miden operations won't work there. Do not disable isolation globally as a convenience.
+**Gotcha (opt-out path)**: Cross-origin-isolation breaks third-party iframes, external scripts without CORS, and OAuth popups (this is exactly why the example wallet leaves it off). If a route must host those and cannot use Miden client code, either (a) use `Cross-Origin-Embedder-Policy: credentialless` for weaker isolation that still allows most cross-origin resources, or (b) scope `crossOriginIsolation: false` to that specific route and accept that Miden operations won't work there. Do not disable isolation globally as a convenience.
 
-## FP4: BigInt Type Mismatch (HIGH)
+## FP4: BigInt at the Raw WASM Boundary (HIGH)
 
-All token amounts in the SDK are `bigint`. Passing `number` causes TypeScript errors or runtime failures.
+The React SDK hooks (`useSend`, `useCreateFaucet`, `useMultiSend`, …) accept `bigint | number` for amounts and coerce to `bigint` internally — `SendOptions.amount` and `CreateFaucetOptions.maxSupply` are both typed `bigint | number`, and `useCreateFaucet` calls `BigInt(options.maxSupply)` before forwarding. So `number` does NOT fail at the hook layer. `bigint` is required only at the raw WASM client (`@miden-sdk/miden-sdk`) boundary, where amounts are `bigint` with no coercion.
 
 ```tsx
-// WRONG
-await send({ from, to, assetId, amount: 1000 });        // number — fails
-await createFaucet({ maxSupply: 1000000, ... });          // number — fails
+// FINE at the React-SDK hook layer — number is coerced
+await send({ from, to, assetId, amount: 1000 });
+await createFaucet({ maxSupply: 1000000, ... });
 
-// CORRECT
-await send({ from, to, assetId, amount: 1000n });        // bigint literal
-await createFaucet({ maxSupply: BigInt(1000000), ... });  // BigInt constructor
+// ALSO FINE — pass bigint directly (preferred; avoids precision loss above 2^53)
+await send({ from, to, assetId, amount: 1000n });
+await createFaucet({ maxSupply: BigInt(1000000), ... });
 
-// CORRECT — use parseAssetAmount for user input
+// REQUIRED at the raw WASM client boundary — must be bigint
+// (the low-level @miden-sdk/miden-sdk client does not coerce number)
+
+// CORRECT — use parseAssetAmount for user input (decimal string → bigint)
 import { parseAssetAmount } from "@miden-sdk/react";
 const amount = parseAssetAmount(inputValue, 8);           // string → bigint
 ```
+
+Prefer `bigint` everywhere anyway: a `number` above `2^53` loses precision before it ever reaches the coercion, so large supplies/amounts must be `bigint` or a decimal string parsed via `parseAssetAmount`.
 
 **Gotcha**: `JSON.stringify` cannot serialize `bigint`. Use a custom replacer or convert to string first.
 
@@ -139,7 +144,7 @@ The client persists accounts, keys, and notes in IndexedDB. Browser "Clear site 
 
 ## FP8: Vite Configuration Requirements (MEDIUM)
 
-The `@miden-sdk/vite-plugin` package handles all Miden-specific Vite config. The template's source-of-truth pattern — which you should copy for any new Miden app — is:
+The `@miden-sdk/vite-plugin` package handles all Miden-specific Vite config. The recommended pattern for any new Miden app that runs client code is:
 
 ```ts
 import { midenVitePlugin } from "@miden-sdk/vite-plugin";
@@ -149,17 +154,19 @@ export default defineConfig({
 });
 ```
 
-`midenVitePlugin()` handles WASM loading, top-level await, pre-bundling exclusion, and — when `crossOriginIsolation: true` is passed — emits the COOP `same-origin` + COEP `require-corp` headers the SDK requires for `SharedArrayBuffer`.
+`midenVitePlugin()` handles WASM loading (esnext build target, top-level await), pre-bundling exclusion (`optimizeDeps.exclude`), package deduplication, a gRPC-web RPC proxy, and — when `crossOriginIsolation: true` is passed — emits the COOP `same-origin` + COEP `require-corp` headers the SDK requires for `SharedArrayBuffer` on both the dev `server` and the `preview` server.
 
-| Option | Plugin default | Template default | Purpose |
-|--------|----------------|------------------|---------|
+| Option | Plugin source default | Recommended for a Miden client route | Purpose |
+|--------|-----------------------|--------------------------------------|---------|
 | `crossOriginIsolation` | `false` | **`true`** | Emit COOP/COEP headers for SharedArrayBuffer |
 
-Always pass `crossOriginIsolation: true` explicitly. The plugin's `false` default is wrong for a Miden app, and relying on it risks silent WASM-init failures if the default shifts in a future release. The opt-out path (routes that host OAuth popups or cross-origin iframes incompatible with isolation) is discussed in FP3. For production, set the same headers at the server level — see `vite-wasm-setup` for host-specific configs.
+Always pass `crossOriginIsolation: true` explicitly on routes that run Miden client code. The plugin's `false` default is wrong for such a route, and relying on it risks silent WASM-init failures. (The plugin README at v0.15.0 incorrectly documents the default as `true`; the executable source default is `false`, unchanged across v0.14–v0.15. Do not trust the README.) The shipped example wallet uses the bare `midenVitePlugin()` precisely because it pairs with `paraVitePlugin()` and must keep isolation OFF for Para OAuth — see FP3 for the opt-out path. For production, set the same headers at your real production host — the plugin only injects them into the Vite dev and preview servers. See `vite-wasm-setup` for host-specific configs.
 
 ## FP9: React StrictMode Double-Init (LOW)
 
-React 19 StrictMode double-invokes effects in development. MidenProvider handles this via `isInitializedRef`, but direct `WasmWebClient.createClient()` calls will initialize twice. (The SDK exports `WasmWebClient` as `WebClient` for convenience.)
+React StrictMode double-invokes effects in development (since React 18; the React SDK's peer dep is `react >= 18.0.0`). MidenProvider guards against this, but direct `WasmWebClient.createClient()` calls will initialize twice.
+
+Naming: `@miden-sdk/miden-sdk` exports the raw wasm-bindgen client as `WasmWebClient` (an internal export used by integration tests) and a separate higher-level `WebClient` wrapper class. They are two distinct classes. The React SDK does its low-level init via the raw client, importing it locally as `WebClient` (`import { WasmWebClient as WebClient } from "@miden-sdk/miden-sdk"`). For manual low-level setup, create the raw client via `WasmWebClient.createClient(...)`.
 
 ```tsx
 // WRONG — manual client creation in useEffect
@@ -178,7 +185,7 @@ useEffect(() => {
 | FP1 | WASM init race | CRITICAL | Use loadingComponent or check isReady |
 | FP2 | Recursive WASM | CRITICAL | Use runExclusive() for all direct client access |
 | FP3 | COOP/COEP | CRITICAL | Add headers in your `vite.config.ts` AND production server |
-| FP4 | BigInt | HIGH | All amounts are bigint (1000n not 1000) |
+| FP4 | BigInt | HIGH | Hooks accept `bigint \| number` and coerce; prefer bigint, required at the raw WASM boundary |
 | FP5 | Bech32 mismatch | HIGH | Match network in rpcUrl and addresses |
 | FP6 | Auto-sync | MEDIUM | Set autoSyncInterval: 0 if UI stability matters |
 | FP7 | IndexedDB loss | MEDIUM | Warn users; use external signers for production |

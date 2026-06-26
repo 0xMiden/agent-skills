@@ -23,41 +23,45 @@ If your app must host third-party iframes, OAuth popups, or other cross-origin r
 
 ## What midenVitePlugin() Handles
 
-`@miden-sdk/vite-plugin` abstracts Miden-specific Vite configuration:
+`@miden-sdk/vite-plugin` abstracts Miden-specific Vite configuration. It does **not** register a `.wasm` module loader — Vite's built-in handling does the actual `.wasm` import. What the plugin sets up:
 
-- **WASM loading** — Configures Vite to correctly import `.wasm` modules
-- **Top-level await** — Enables top-level `await` required by the WASM SDK initialization
-- **optimizeDeps** — Excludes `@miden-sdk/miden-sdk` from pre-bundling (pre-bundling corrupts the WASM binary)
-- **COOP/COEP headers** — Emits `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` on the dev server when `crossOriginIsolation: true`
+- **WASM dedup / single copy** — `resolve.alias` (exact-match regex on the WASM package), `resolve.dedupe`, and `resolve.preserveSymlinks` force a single resolved copy of `@miden-sdk/miden-sdk` (avoids WASM class-identity issues across symlinked/monorepo setups)
+- **optimizeDeps.exclude** — Excludes `@miden-sdk/miden-sdk` from pre-bundling (pre-bundling corrupts the WASM binary)
+- **Top-level await** — Sets `build.target: "esnext"`, which enables the top-level `await` the WASM SDK initialization requires
+- **ES-module workers** — Sets `worker.format: "es"`, required for the WASM SDK's module workers
+- **COOP/COEP headers** — When `crossOriginIsolation: true`, emits `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` on **both** the Vite dev server and the Vite preview server (see Production Deployment Headers)
+- **gRPC-web dev proxy** — Proxies `/rpc.Api` to `rpcProxyTarget` (default `https://rpc.testnet.miden.io`) during `vite` (serve) to bypass CORS in dev; set `rpcProxyTarget: false` to disable
+- **React context dedup** — Externalizes `@miden-sdk/react` during esbuild pre-bundling so signer-provider React contexts share one identity
 
 You don't need to install or configure `vite-plugin-wasm`, `vite-plugin-top-level-await`, or dexie aliases manually.
 
 ## Required Dependencies
 
-Keep all `@miden-sdk/*` runtime packages aligned. The [frontend template](https://github.com/0xMiden/frontend-template)'s `package.json` pins them as an exact-version set; upgrade all four together and re-run the full verification suite (including the wallet-confirmed increment E2E) whenever you bump.
+Two packages move together as the core SDK pair: `@miden-sdk/miden-sdk` (the WASM client) and `@miden-sdk/react` (the React hooks). At v0.15.0 both are `0.15.0` and share a WASM ABI, so they must match. The **vite-plugin and the wallet adapters are versioned independently** and can trail the core SDK by a minor/patch — don't assume they're in lockstep. The [frontend template](https://github.com/0xMiden/frontend-template)'s `package.json` is the reference for the current pin set; re-run your app's full build + end-to-end suite whenever you bump.
 
 ```json
 {
   "dependencies": {
-    "@miden-sdk/react": "<matches miden-sdk>",
-    "@miden-sdk/miden-sdk": "<authoritative version>",
-    "@miden-sdk/miden-wallet-adapter-base": "<may lag by a patch>",
-    "@miden-sdk/miden-wallet-adapter-react": "<may lag by a patch>"
+    "@miden-sdk/react": "<matches @miden-sdk/miden-sdk>",
+    "@miden-sdk/miden-sdk": "<authoritative core version>",
+    "@miden-sdk/miden-wallet-adapter-react": "<independent — see 0xMiden/wallet-adapter repo>"
   },
   "devDependencies": {
-    "@miden-sdk/vite-plugin": "<matches miden-sdk>"
+    "@miden-sdk/vite-plugin": "<may lag the core SDK by a minor/patch — see your package.json>"
   }
 }
 ```
 
 Notes:
+- **`@miden-sdk/react` and `@miden-sdk/miden-sdk` must match** — they link against the same WASM ABI, so a mixed pair (e.g. one on 0.14, one on 0.15) won't link. Upgrade them together.
+- **The `@miden-sdk/vite-plugin` does NOT track the core SDK version.** At v0.15.0 the plugin ships as `0.14.11` (and the example app pins `^0.14.5`) against `@miden-sdk/miden-sdk@0.15.0`; they only realign later in the 0.15 line. Always defer to your app's `package.json` (or the frontend template's) for the authoritative plugin pin — never assume `vite-plugin === miden-sdk`.
+- **The wallet adapters live in a separate repo.** `@miden-sdk/miden-wallet-adapter-react` (and its companion `@miden-sdk/miden-wallet-adapter-base`) are published from [`0xMiden/wallet-adapter`](https://github.com/0xMiden/wallet-adapter), not the web-sdk repo, and are versioned independently. Confirm the exact package names and versions against that repo (or your app's `package.json`); the `-react` adapter's `peerDependencies` pin `@miden-sdk/react` at `^<major>.<minor>.x`, so a patch-level gap from the core SDK is expected and fine.
 - **Always check your app's `package.json` (or the [frontend template](https://github.com/0xMiden/frontend-template)'s) for the authoritative versions** — this skill intentionally doesn't inline them because they shift across SDK releases.
-- The wallet adapter packages are versioned separately from the core SDK. Their `peerDependencies` typically allow `^<major>.<minor>.x`, so a patch-level gap between the adapter and the core SDK is expected and fine.
 - When you bump, clean-install: `rm -rf node_modules yarn.lock && yarn install`. Vite's dep optimizer caches resolved SDK paths, and stale caches can surface as `ERR_BLOCKED_BY_RESPONSE` or spurious `Failed to fetch` errors on module workers.
 
 ## Production Deployment Headers
 
-COOP/COEP headers must be set on the production server. `midenVitePlugin({ crossOriginIsolation: true })` only affects the Vite dev server.
+COOP/COEP headers must be set on the production server. `midenVitePlugin({ crossOriginIsolation: true })` only emits them on the Vite dev server (`vite`) and the Vite preview server (`vite preview`) — it does not touch your real production host. Configure the headers separately on nginx/Vercel/Cloudflare/etc.
 
 ### Nginx
 ```nginx

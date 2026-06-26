@@ -196,8 +196,12 @@ strings are built with a small `indexes(...)` helper, e.g.
 
 The migration system is **not currently in use** — the Miden network
 resets on every upgrade, so `ensureClientVersion` nukes the DB (close /
-`delete` / re-open) whenever the stored client version is older than the
-running one. Adding a table or changing an index today therefore means:
+`delete` / re-open) when the running client version is a higher major or
+minor than the stored one; same-major.minor patch bumps and downgrades
+just persist the new version without resetting (see the semver
+`sameMajorMinor` / `!semver.gt(...)` guard in `ensureClientVersion`).
+The 0.14 -> 0.15 minor bump does trigger it. Adding a table or
+changing an index today therefore means:
 1. Update the `Table` enum + interface(s) in `schema.ts`
 2. Add the table/index to `V1_STORES` (additive, since the DB is nuked on
    version change; once migrations are enabled, `V1_STORES` must be frozen

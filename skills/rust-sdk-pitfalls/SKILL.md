@@ -88,15 +88,19 @@ If you need custom keys or values, implement `WordKey` / `WordValue` by converti
 
 Storage slot names follow a strict pattern. Getting it wrong often returns the default value silently.
 
-**Pattern**: `[component_package_or_name]::[snake_case(component_struct)]::[field_name]`
+**Pattern**: `[package_name]::[snake_case(component_struct)]::[field_name]`
 
-**Conversion rule**: Replace characters outside `[A-Za-z0-9_]` with `_` in the package or component name. The package comes from `[package.metadata.component] package = "..."`, with any `@version` suffix ignored.
+**Where the namespace segment comes from**: The `#[component]` macro derives the namespace from the Miden project package name — `[package] name` in your component's `miden-project.toml`, NOT from `Cargo.toml`. (Source: the macro loads `miden-project.toml` and uses `metadata.package.name()` as the storage namespace; see the caveat below.)
 
-| Package in your `Cargo.toml` | Component Struct | Field | Storage Slot Name |
-|----------------------|------------------|-------|-------------------|
-| `miden:counter-account` | `CounterContract` | `count_map` | `miden_counter_account::counter_contract::count_map` |
-| `miden:bank-account` | `BankAccount` | `balances` | `miden_bank_account::bank_account::balances` |
-| `miden:bank-account` | `BankAccount` | `initialized` | `miden_bank_account::bank_account::initialized` |
+**Conversion rule**: Any `@version` suffix on the package name is stripped, and characters outside `[A-Za-z0-9_]` are replaced with `_`. Because the project package name is conventionally already `snake_case`, the namespace segment usually equals it verbatim.
+
+| `miden-project.toml` `[package] name` | Component Struct | Field | Storage Slot Name |
+|---------------------------------------|------------------|-------|-------------------|
+| `counter_account` | `CounterContract` | `count_map` | `counter_account::counter_contract::count_map` |
+| `bank_account` | `BankAccount` | `balances` | `bank_account::bank_account::balances` |
+| `bank_account` | `BankAccount` | `initialized` | `bank_account::bank_account::initialized` |
+
+**Caveat (toolchain-version dependent)**: This naming is a property of the Rust SDK contract macros, which live in the compiler repo and are independently versioned (~v0.8; the SDK crates do not carry a v0.15 tag). The slot-naming algorithm — `namespace::snake_case(struct)::field`, with non-`[A-Za-z0-9_]` mapped to `_` and `@version` stripped — has been stable, but verify against your installed toolchain rather than assuming a protocol version.
 
 ## P6: No-std Environment
 
@@ -112,11 +116,11 @@ extern crate alloc;
 use alloc::vec::Vec;
 ```
 
-## P7: Asset ABI Is Two Words, Not One
+## P7: Rust SDK `Asset` Is Two Words (Key + Value)
 
 **Severity**: Medium — old `asset.inner[...]` code is stale
 
-`Asset` is now:
+In the Rust SDK (`miden::Asset` / `miden_base_sys::bindings::Asset`), an `Asset` is encoded as two words:
 
 ```rust
 pub struct Asset {
@@ -135,6 +139,8 @@ let asset_key = asset.key;
 
 Do not assume the old single-word asset layout. Use `asset.key` and `asset.value`, or protocol helpers, instead of reconstructing from old `asset.inner[...]` offsets.
 
+**Clarification (not a v0.15 change)**: This two-word `{key, value}` form is the Rust SDK ABI type, whose own documentation states it matches the v0.14 protocol/base ABI — it is the SDK encoding, not a v0.15 protocol redesign. At the protocol layer, `Asset` is an enum `{ Fungible, NonFungible }`, and the vault words are obtained via `to_key_word()` / `to_value_word()`. Reading the fungible amount from `value[0]` is correct on both sides.
+
 ## P8: `Recipient::compute` Was Removed
 
 **Severity**: Medium — causes compilation errors after upgrading
@@ -152,45 +158,55 @@ let recipient = note::build_recipient(
 );
 ```
 
-## P9: P2ID Note Root Hardcoding
+`note::build_recipient` is retained in the Rust SDK as a friendly alias; it forwards to the underlying host function (`miden::protocol::note::compute_and_store_recipient`), which computes and stores the recipient in one step. You can call either name.
+
+## P9: P2ID Note Root — Prefer `script_root()`, Do Not Hardcode
 
 **Severity**: Low-Medium — breaks after miden-standards updates
 
-Creating P2ID output notes requires the MAST root digest of the P2ID script. This is typically hardcoded as a constant.
+Creating P2ID output notes requires the MAST root of the P2ID script. The root changes whenever the P2ID script or the assembler/hashing changes (it did between v0.14 and v0.15), so a hardcoded literal is both stale and unverifiable.
 
-For any note that is being created within the compiler code, the MAST root digest is needed. Below you find the example of a P2ID note
+**Source of truth**: Use `P2idNote::script_root()` from `miden-standards` (returns a `NoteScriptRoot`, a `Word` newtype convertible via `.into()`). Derive the root from the dependency rather than embedding a literal, and re-derive after any dependency bump.
 
 ```rust
-fn p2id_note_root() -> Digest {
-    Digest::from_word(
-        Word::try_from([
-            13362761878458161062_u64,
-            15090726097241769395_u64,
-            444910447169617901_u64,
-            3558201871398422326_u64,
-        ])
-        .unwrap(),
-    )
+use miden_standards::note::P2idNote;
+
+// script_root() returns a NoteScriptRoot (a Word newtype); convert to Word when needed.
+let p2id_root: Word = P2idNote::script_root().into();
+```
+
+**If you must embed a constant** (e.g., inside compiler/contract code that cannot call into miden-standards), regenerate it from the current `miden-standards` version and verify it after every update. The four-limb literal below is an ILLUSTRATIVE v0.14-era value only — it will NOT match v0.15 and must not be copied as-is:
+
+```rust
+// ILLUSTRATIVE v0.14 value ONLY — does NOT match v0.15. Regenerate from
+// P2idNote::script_root() for your pinned miden-standards version.
+fn p2id_note_root() -> Word {
+    Word::try_from([
+        13362761878458161062_u64,
+        15090726097241769395_u64,
+        444910447169617901_u64,
+        3558201871398422326_u64,
+    ])
+    .unwrap()
 }
 ```
 
-**Risk**: If miden-standards updates the P2ID script, this digest becomes invalid and withdrawals silently fail.
+**Risk**: If miden-standards updates the P2ID script, any hardcoded digest becomes invalid and withdrawals silently fail.
 
-**Mitigation**: Use `P2idNote::script_root()` from miden-standards if available, or verify the hardcoded root matches the current version after dependency updates.
-
-**NoteType for P2ID**: P2ID output notes created in contract code should use the private note type value via `NoteType::from(felt!(2))` (see P10). Using the public note type triggers an opaque "missing details in advice provider" error at execution time. See [miden-bank withdraw](https://github.com/0xMiden/tutorials/blob/main/examples/miden-bank/contracts/bank-account/src/lib.rs) for the working pattern.
+**NoteType for P2ID**: P2ID output notes created in contract code should use the private note type value via `NoteType::from(felt!(0))` (see P10). In v0.15 the kernel rejects any note type other than `0` (private) or `1` (public) with `ERR_NOTE_INVALID_TYPE`. See [miden-bank withdraw](https://github.com/0xMiden/tutorials/blob/main/examples/miden-bank/contracts/bank-account/src/lib.rs) for the working pattern.
 
 ## P10: NoteType Variants Unavailable in Compiler SDK
 
-**Severity**: Medium -- causes compilation errors
+**Severity**: Critical -- wrong values panic at runtime, named variants cause compilation errors
 
-Named enum variants (`NoteType::Private`, `NoteType::Public`, `NoteType::Encrypted`) don't exist in contract code. Construct via `NoteType::from()`:
+Named enum variants (`NoteType::Private`, `NoteType::Public`) don't exist in contract code — the SDK `NoteType` is an unvalidated transparent `Felt` wrapper. Construct via `NoteType::from()`:
 
 | NoteType | Value |
 |----------|-------|
+| Private (default) | `NoteType::from(felt!(0))` |
 | Public | `NoteType::from(felt!(1))` |
-| Private | `NoteType::from(felt!(2))` |
-| Encrypted | `NoteType::from(felt!(3))` |
+
+**v0.15 encoding changed**: The note-type encoding is now 1-bit — `Private = 0` (and `Private` is the protocol default) and `Public = 1`. Only these two values exist; there is no `Encrypted` type. Because the SDK wrapper does no validation, an out-of-range value (e.g. `felt!(2)` or `felt!(3)`) is not caught at compile time — it is rejected at execution time by the kernel with `ERR_NOTE_INVALID_TYPE` (the kernel asserts `note_type <= 1`). Emitting the old v0.14 value `felt!(2)` for a private note will panic on a v0.15 node.
 
 See [miden-bank bank-account](https://github.com/0xMiden/tutorials/blob/main/examples/miden-bank/contracts/bank-account/src/lib.rs) for `NoteType::from(note_type)` usage.
 

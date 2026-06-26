@@ -7,7 +7,7 @@ description: Use when writing MASM `u32*` instructions on values from user input
 
 ## Rule
 
-MASM's `u32*` instructions require their operands to be valid `u32` values (i.e. fit in 32 bits, `<= u32::MAX`). Applied to a non-u32 value, a `u32*` instruction traps with the VM's generic error (`operation expected u32 values, but got values: ...`) rather than telling you *which* precondition was violated.
+MASM's `u32*` instructions require their operands to be valid `u32` values (i.e. fit in 32 bits, `<= u32::MAX`). Applied to a non-u32 value the behavior is *undefined*: in the current VM such an op typically traps with the generic error (`operation expected u32 values, but got values: ...`) rather than telling you *which* precondition was violated — but trapping is not guaranteed (it may instead wrap/truncate and silently poison the proof).
 
 Before applying any `u32*` instruction to a value that is not already known to be a valid u32 (e.g. it came from the stack as input, was read from memory, or arose from a non-u32 arithmetic op), assert the bound with a descriptive error:
 
@@ -23,7 +23,7 @@ If the operand is already known-valid (just produced by another `u32*` op, or a 
 
 ## Why
 
-`u32*` instructions are tuned for the precondition that operands fit in 32 bits. The VM does enforce the bound at execution time, but a bare `u32*` op surfaces only the generic `operation expected u32 values, but got values: ...` failure — it does not name the precondition or the call site. Asserting first with `u32assert*.err=` replaces that generic trap with a descriptive, named failure mode, so a non-u32 input fails loudly and diagnosably at the point where the assumption is introduced.
+`u32*` instructions are tuned for the precondition that operands fit in 32 bits. Passing an out-of-range operand to a `u32*` op is undefined behavior: the current VM almost always traps with the generic `operation expected u32 values, but got values: ...` error, but trapping is not guaranteed — it may instead wrap/truncate and silently poison the proof, and even when it traps it does not name the precondition or the call site. Asserting first with `u32assert*.err=` turns this fragile/undefined path into a deterministic, named failure mode, so a non-u32 input fails loudly and diagnosably at the point where the assumption is introduced.
 
 ## Examples
 
@@ -37,6 +37,7 @@ u32assert2.err=ERR_VALUES_NOT_U32
 u32lt
 
 # Bad: u32 op on untrusted input
-u32overflowing_add   # if an operand exceeds 2^32 this traps with the generic
-                     # "operation expected u32 values" error instead of a named one
+u32overflowing_add   # if an operand exceeds 2^32 the behavior is undefined; the current
+                     # VM typically traps with the generic "operation expected u32 values"
+                     # error instead of a named one (but may instead wrap and poison the proof)
 ```

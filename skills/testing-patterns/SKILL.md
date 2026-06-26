@@ -43,7 +43,7 @@ it("shows empty state", () => {
 ### Default mock return values
 
 **Query hooks** return populated data by default:
-- `useAccounts()` — 2 wallets, 1 faucet
+- `useAccounts()` — returns `accounts` (e.g. 3 account headers); `wallets` mirrors `accounts` and `faucets` is always `[]` in v0.15 (protocol 0.15 removed faucet-vs-wallet from the account id, so both fields are deprecated). Detect faucet-ness per-account from its components, not from a `faucets` array. The override example above already models this correctly (`wallets: [], faucets: []`).
 - `useAccount()` — account with 10.0 TEST token balance
 - `useNotes()` — 1 input note, 1 consumable note
 - `useSyncState()` — syncHeight: 12345, not syncing
@@ -232,6 +232,6 @@ If any hook fails (exit code 2), the agent is blocked from proceeding until the 
 
 **Not mocking the SDK**: Components importing from `@miden-sdk/react` will fail without `vi.mock()` because the real SDK requires WASM initialization.
 
-**Using number instead of bigint**: Mock amounts must use `bigint` (`1000n`, not `1000`). The SDK enforces this at the type level.
+**Using number instead of bigint for result/fixture amounts**: Result and fixture amounts are typed strictly as `bigint` (`AssetBalance.amount`, `NoteAsset.amount`, and `useAccount().getBalance()`), so mock them with bigint literals (`1000n`, not `1000`). Hook input options (`SendOptions.amount`, `MintOptions.amount`, `MultiSendRecipient.amount`, `CreateFaucetOptions.maxSupply`) accept `bigint | number`, but prefer bigint to avoid precision loss.
 
 **Testing implementation details**: Test what the user sees (text, buttons, states), not internal hook calls. Use `screen.getByRole`, `screen.getByText`, not internal component state.

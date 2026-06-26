@@ -19,7 +19,8 @@ Group non-error constants by topic. Use blank lines between sections. Common top
 - **Memory pointer offsets** – offsets into memory regions
 - **Local memory offsets** – offsets within a procedure's local memory
 - **Magic numbers / values** – domain-specific literals
-- **Event identifiers** – for `emit` / `trace`
+- **Event identifiers** – `event("...")` constants consumed by `emit` (e.g. `const AUTH_REQUEST_EVENT = event("miden::protocol::auth::request")` used as `emit.AUTH_REQUEST_EVENT`)
+- **Trace ids** – plain numeric constants consumed by `trace` (e.g. `const PRINTLN = 0` used as `trace.PRINTLN`); `trace` takes a numeric `u32` id, **not** an `event("...")` constant
 
 Order sections by dependency or by usage frequency. Put the most widely used first.
 
@@ -92,6 +93,19 @@ const IS_SIGNER_FOUND_LOC = 0
 const CURRENT_SIGNER_INDEX_LOC = 1
 ```
 
+## Visibility (`pub const`)
+
+In v0.15 a constant must be declared `pub const` to be referenced from another module. This is **not** limited to storage slots: any constant imported elsewhere via `use path::to::CONST` (or referenced as `module::CONST`) must be `pub`, including magic numbers, memory-pointer offsets, and event identifiers. Keep purely file-local constants as plain `const`.
+
+```masm
+# pub because they are imported by other modules
+pub const MAX_ASSETS_PER_NOTE = 64
+pub const AUTH_REQUEST_EVENT = event("miden::protocol::auth::request")
+
+# file-local only — no pub needed
+const IS_SIGNER_FOUND_LOC = 0
+```
+
 ## Example Layout
 
 ```masm
@@ -142,5 +156,6 @@ end
 - [ ] Memory pointers (shared/global) use descriptive names
 - [ ] Local memory offsets use UPPERCASE names ending in `_LOC`/`_LOCAL`, grouped under a per-procedure section comment when multiple procedures define locals
 - [ ] No lowercase procedure-name prefix on local offset constants
+- [ ] Constants referenced from another module are declared `pub const`; file-local constants stay plain `const`
 - [ ] Prefer spaces around `=` for new/edited constants (existing files may be no-space; keep file consistent)
 - [ ] Section comments used to label topic groups

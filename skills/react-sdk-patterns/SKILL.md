@@ -16,8 +16,8 @@ import { MidenProvider } from "@miden-sdk/react";
 
 <MidenProvider
   config={{
-    rpcUrl: "testnet",          // "devnet" | "testnet" | "localhost" | custom URL
-    prover: "testnet",          // "local" | "devnet" | "testnet" | custom URL
+    rpcUrl: "testnet",          // "devnet" | "testnet" | "localhost" | "local" | custom URL
+    prover: "testnet",          // "local" | "localhost" | "devnet" | "testnet" | custom URL | { primary, fallback }
     autoSyncInterval: 15000,    // ms, set to 0 to disable. Default: 15000
     noteTransportUrl: "...",    // optional: for private note delivery
   }}
@@ -41,18 +41,22 @@ Each returns its own result shape plus `isLoading`, `error`, `refetch`.
 ### useAccounts()
 ```tsx
 const { accounts, wallets, faucets, isLoading, error, refetch } = useAccounts();
-// wallets — AccountHeader[] (regular wallet accounts)
-// faucets — AccountHeader[] (token faucet accounts)
-// accounts — AccountHeader[] (everything)
+// accounts — AccountHeader[] (every tracked account)
+// wallets  — DEPRECATED: mirrors `accounts` (v0.15 removed faucet-vs-wallet from the account id)
+// faucets  — DEPRECATED: always [] in v0.15
 ```
+
+In v0.15 an account's faucet-vs-wallet kind is no longer encoded in the account id, so the split is gone: `wallets` is just `accounts` and `faucets` is always empty. Use `accounts` and detect faucets **per-account** via `account.isFaucet()` (load the full `Account` with `useAccount`).
 
 ### useAccount(accountId: string)
 ```tsx
 const { account, assets, getBalance, isLoading, error, refetch } = useAccount(accountId);
-// account — Account object (.id, .nonce, .bech32id())
+// account — Account object (.id(), .nonce(), .bech32id(), .isFaucet())
 // assets — AssetBalance[] (assetId, amount, symbol?, decimals?)
 // getBalance(faucetId) — bigint balance for specific token
 ```
+
+`account.id()` and `account.nonce()` are methods (call them, then `.toString()` to render). `bech32id()` is installed on the `Account` prototype by the React SDK.
 
 ### useNotes(filter?)
 ```tsx
@@ -65,7 +69,7 @@ const { notes, consumableNotes, noteSummaries, consumableNoteSummaries, isLoadin
 // Filter by account:
 const { notes } = useNotes({ accountId: "0x..." });
 // Filter by status:
-const { notes } = useNotes({ status: "committed" });
+const { notes } = useNotes({ status: "committed" });  // "all" | "consumed" | "committed" | "expected" | "processing"
 // Filter by sender:
 const { notes } = useNotes({ sender: "0x..." });
 // Exclude specific notes:
@@ -94,15 +98,17 @@ const { syncHeight, isSyncing, lastSyncTime, sync, error } = useSyncState();
 await sync(); // Manual sync
 ```
 
-### useAssetMetadata(faucetId: string | string[])
+### useAssetMetadata(assetIds?: string[])
 ```tsx
-const { assetMetadata } = useAssetMetadata(faucetId);
+const { assetMetadata } = useAssetMetadata([faucetId]); // takes a string[] (NOT a bare string)
 // assetMetadata — Map<string, AssetMetadata>
 // Each entry: { assetId, symbol?, decimals? }
 const meta = assetMetadata.get(faucetId);
 // meta.symbol — "TEST"
 // meta.decimals — 8
 ```
+
+Pass an array even for a single asset — the hook calls `.filter` on its argument, so a bare string throws a runtime `TypeError`.
 
 ### useTransactionHistory(options?)
 ```tsx
@@ -112,17 +118,27 @@ const { records, record, status, isLoading, error, refetch } = useTransactionHis
 
 ## Mutation Hooks
 
-Each returns its own action function plus `isLoading`, `stage`, `error`, `reset`.
+Each returns its own action function plus `error` and `reset`. The two families differ in their loading/progress fields:
+- **Transaction hooks** (`useSend`, `useMultiSend`, `useMint`, `useConsume`, `useSwap`, `useTransaction`) expose `isLoading` and `stage` (a `TransactionStage`).
+- **Account create/import hooks** (`useCreateWallet`, `useCreateFaucet`, `useImportAccount`) expose `isCreating` (or `isImporting` for the latter) and have **no** `stage`.
 
 **Transaction stages**: `"idle"` → `"executing"` → `"proving"` → `"submitting"` → `"complete"`
+
+Import `AuthScheme` for the `authScheme` option (re-exported from the package root):
+
+```tsx
+import { AuthScheme } from "@miden-sdk/react";
+// AuthScheme.AuthRpoFalcon512 = 2 (default)
+// AuthScheme.AuthEcdsaK256Keccak = 1
+```
 
 ### useCreateWallet()
 ```tsx
 const { createWallet, wallet, isCreating, error, reset } = useCreateWallet();
 const account = await createWallet({
-  storageMode: "private",  // "private" | "public" | "network". Default: "private"
-  mutable: true,           // Default: true
-  authScheme: 0,           // 0 = RpoFalcon512, 1 = EcdsaK256Keccak. Default: 0
+  storageMode: "private",                   // "private" | "public". Default: "private"
+  authScheme: AuthScheme.AuthRpoFalcon512,  // Default: AuthScheme.AuthRpoFalcon512
+  initSeed: seedBytes,                       // optional: Uint8Array for a deterministic account id
 });
 ```
 
@@ -131,9 +147,11 @@ const account = await createWallet({
 const { createFaucet, faucet, isCreating, error, reset } = useCreateFaucet();
 const account = await createFaucet({
   tokenSymbol: "TEST",
-  decimals: 8,             // Default: 8
-  maxSupply: 1000000n,     // bigint!
-  storageMode: "public",   // Default: "private"
+  tokenName: "Test Token",                  // optional: defaults to tokenSymbol
+  decimals: 8,                              // Default: 8
+  maxSupply: 1000000n,                      // bigint | number
+  storageMode: "private",                   // "private" | "public". Default: "private"
+  authScheme: AuthScheme.AuthRpoFalcon512,  // Default: AuthScheme.AuthRpoFalcon512
 });
 ```
 
@@ -148,7 +166,11 @@ const account = await importAccount({ type: "id", accountId: "0x..." });
 const account = await importAccount({ type: "file", file: accountFileOrBytes });
 
 // Import from seed:
-const account = await importAccount({ type: "seed", seed: seedBytes, mutable: true });
+const account = await importAccount({
+  type: "seed",
+  seed: seedBytes,
+  authScheme: AuthScheme.AuthRpoFalcon512,  // optional. Default: AuthScheme.AuthRpoFalcon512
+});
 ```
 
 ### useSend()
@@ -258,9 +280,8 @@ const { initialize, sessionAccountId, isReady, step, error, reset } = useSession
   },
   assetId: faucetId,              // optional: for note filtering
   walletOptions: {                // optional: session wallet creation options
-    storageMode: "private",
-    mutable: true,
-    authScheme: 0,
+    storageMode: "private",                   // "private" | "public"
+    authScheme: AuthScheme.AuthRpoFalcon512,
   },
   pollIntervalMs: 3000,           // optional: funding detection interval. Default: 3000
 });
@@ -292,14 +313,16 @@ No signer provider needed. Keys are managed in the browser via IndexedDB.
 
 ### External Signers
 Wrap MidenProvider with a signer provider. Three pre-built options:
-- `ParaSignerProvider` from `@miden-sdk/para` — EVM wallets
+- `ParaSignerProvider` from `@miden-sdk/use-miden-para-react` — EVM wallets
 - `TurnkeySignerProvider` from `@miden-sdk/miden-turnkey-react` — passkey auth
 - `MidenFiSignerProvider` from `@miden-sdk/miden-wallet-adapter-react` — MidenFi wallet
 
+These three packages live in external repos (not in web-sdk), so confirm the exact published names against the current Para/Turnkey/MidenFi integration docs before installing. The v0.15 example app (`packages/react-sdk/examples/wallet/src/main.tsx`) imports them as above; some web-sdk docs alias the Para package as `@miden-sdk/para`.
+
 ```tsx
 // Example: Para signer wrapping MidenProvider
-import { ParaSignerProvider } from "@miden-sdk/para";
-<ParaSignerProvider apiKey="..." environment="PRODUCTION">
+import { ParaSignerProvider } from "@miden-sdk/use-miden-para-react";
+<ParaSignerProvider apiKey="..." environment="BETA">
   <MidenProvider config={...}><App /></MidenProvider>
 </ParaSignerProvider>
 ```
@@ -339,6 +362,8 @@ await runExclusive(async () => {
 ## Type Imports
 
 ```tsx
+import { AuthScheme } from "@miden-sdk/react"; // value (enum), not just a type
+
 import type {
   MidenConfig, QueryResult, MutationResult, TransactionStage,
   AccountsResult, AccountResult, AssetBalance, NotesResult, NoteSummary,

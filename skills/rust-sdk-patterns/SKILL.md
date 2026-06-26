@@ -50,19 +50,19 @@ fn run(_arg: Word, account: &mut Account) {
 | Module | Key Functions | Purpose |
 |--------|--------------|---------|
 | `native_account::` | `add_asset(Asset)`, `remove_asset(Asset)`, `incr_nonce()` | Modify account vault/nonce |
-| `active_account::` | `get_id() -> AccountId`, `get_balance(AccountId) -> Felt` | Query current account |
+| `active_account::` | `get_id() -> AccountId`, `get_balance(Word) -> Felt` | Query current account (`get_balance` takes the asset key word, not an AccountId) |
 | `active_note::` | `get_storage() -> Vec<Felt>`, `get_assets() -> Vec<Asset>`, `get_sender() -> AccountId` | Query note being consumed |
 | `note::` | `build_recipient(Word, Word, Vec<Felt>) -> Recipient` | Build note recipients from serial number, script root, and note storage |
 | `output_note::` | `create(Tag, NoteType, Recipient) -> NoteIdx`, `add_asset(Asset, NoteIdx)` | Create output notes |
 | `faucet::` | `create_fungible_asset(Felt) -> Asset`, `mint(Asset)`, `burn(Asset)` | Asset minting |
 | `tx::` | `get_block_number() -> Felt`, `get_block_timestamp() -> Felt` | Transaction context |
-| Intrinsics | `assert(bool)`, `assertz(Felt)`, `assert_eq(Felt, Felt)` | Validation |
+| Intrinsics | `assert(Felt)`, `assertz(Felt)`, `assert_eq(Felt, Felt)` | Validation (`assert` fails unless the felt equals 1) |
 
 ## Asset Handling
 
-`Asset` is now a two-word value:
+`Asset` is a two-word value (`key` + `value`):
 
-**Constructor**: `Asset::new(word)` creates an Asset from a Word.
+**Constructor**: `Asset::new(key, value)` builds an Asset from its vault key word and value word (e.g. `Asset::new(key_word, value_word)`).
 
 See [miden-bank bank-account](https://github.com/0xMiden/tutorials/blob/main/examples/miden-bank/contracts/bank-account/src/lib.rs) for complete asset handling patterns including deposit, withdrawal, and balance tracking.
 
@@ -85,8 +85,8 @@ let asset_key = asset.key;
 // Add asset to account vault (only from component methods, not note scripts — see pitfall P11)
 native_account::add_asset(asset);
 
-// Remove asset from account vault
-native_account::remove_asset(asset.clone());
+// Remove asset from account vault (Asset is Copy, no clone needed)
+native_account::remove_asset(asset);
 ```
 
 ## P2ID Output Note Creation
@@ -104,8 +104,9 @@ Then import the bindings in your Rust code. See `contracts/increment-note/src/li
 ```rust
 // Felt from integer
 let f = felt!(42);                     // preferred for literals in contract code
-let f = Felt::new(42);                 // construct a Felt from a u64
-let f = Felt::from_u32(42);
+let f = Felt::new(42).unwrap();        // fallible: Felt::new returns Result<Felt, _> in v0.15
+let f = Felt::new_unchecked(42);       // infallible, non-reducing form
+let f = Felt::from_u32(42);            // infallible (u32 always fits)
 let f = Felt::from_canonical_checked(42).unwrap();
 
 // Word from Felts

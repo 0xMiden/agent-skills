@@ -67,7 +67,8 @@ A transaction is a **single-account state transition** with 4 phases:
 ### Felt and Word
 - **Felt**: Field element in the Goldilocks prime field (p = 2^64 - 2^32 + 1). The fundamental data unit.
 - **Word**: Array of 4 Felts (32 bytes). Used for cryptographic hashes, storage keys, account IDs.
-- **Current constructors**: `Felt::new`, `Felt::from_u8` / `from_u16` / `from_u32`, `Felt::from_canonical_checked`, `Word::new`, `Word::from([u32; 4])`, `Word::from([Felt; 4])`, `Word::try_from([u64; 4])`
+- **Felt constructors**: `Felt::new(u64)` is **fallible** in v0.15 — it returns `Result<Felt, FeltFromIntError>` and rejects out-of-range values (delegates to `from_canonical_checked`), so callers must `?`/match it. `Felt::new_unchecked(u64)` is the raw, non-reducing constructor (any `u64`, no validation). Infallible constructors: `Felt::from_u8` / `from_u16` / `from_u32`, `Felt::from_canonical_checked` (returns `Option`).
+- **Word constructors**: `Word::new`, `Word::from([u32; 4])`, `Word::from([Felt; 4])`, `Word::try_from([u64; 4])`
 - **Current accessors**: `felt.as_canonical_u64()`, `word.as_elements()`, `word.into_elements()`, `word.as_bytes()`, `word.to_hex()`
 
 **WARNING**: Felt arithmetic is **modular**. Subtraction wraps around the prime. Always validate with `.as_canonical_u64()` before subtracting (`.as_u64()` in the JS/React SDK). See the rust-sdk-pitfalls skill (or frontend-pitfalls for the JS side) for details.
@@ -85,11 +86,13 @@ A transaction is a **single-account state transition** with 4 phases:
 | Component | Purpose |
 |-----------|---------|
 | `BasicWallet` | Standard wallet: `receive_asset()`, `move_asset_to_note()` |
-| `BasicFungibleFaucet` | Mint/burn fungible tokens |
+| `FungibleFaucet` | Mint/burn fungible tokens; built via `FungibleFaucet::builder()` |
 | `NoAuth` | No authentication (for testing) |
 | `AuthSingleSig` | Production signature authentication — unified auth component covering both Falcon-512 and ECDSA-K256 key types |
 
 **v14 note**: `AuthSingleSig` unifies what were previously per-scheme auth components (one for Falcon-512, one for ECDSA-K256) into a single component that dispatches on the key type ([miden-client#1798](https://github.com/0xMiden/miden-client/pull/1798)). In the same release the underlying Falcon-512 signature scheme adopted Poseidon2 as its hash function, and is now named `Falcon512Poseidon2`. If you see the older per-scheme component names or the old signature-scheme name in examples or docs, the source predates 0.14 and needs updating.
+
+**v15 note**: `BasicFungibleFaucet` and `NetworkFungibleFaucet` were unified into a single `FungibleFaucet` component, constructed with the `bon`-generated `FungibleFaucet::builder()` (required setters `.name(TokenName::new(..)?)`, `.symbol(TokenSymbol::new(..)?)`, `.decimals(n)`, `.max_supply(AssetAmount)`, then `.build()?`). If you see `BasicFungibleFaucet` or `NetworkFungibleFaucet`, the source predates 0.15 — those symbols no longer exist.
 
 ## Development Model
 

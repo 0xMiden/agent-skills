@@ -26,14 +26,14 @@ Hidden memory inputs make the procedure's signature a lie — a reader of `Input
 # Good
 #! Inputs:  [note_index, ASSET]
 #! Outputs: []
-proc add_asset_to_note
+proc append_asset_to_note
     # ... uses values directly from the stack
 end
 
 # Bad: implicit input via memory location the caller had to populate
 #! Inputs:  []
 #! Outputs: []
-proc add_asset_to_note
+proc append_asset_to_note
     mem_load.PENDING_NOTE_PTR       # caller had to set this first
     mem_loadw_le.PENDING_ASSET_PTR
     # ...
@@ -43,7 +43,7 @@ end
 # pointer to it is an explicit stack input named in the doc block
 #! Inputs:  [proof_ptr, leaf_index, ROOT]
 #! Outputs: [is_valid]
-proc verify_merkle_proof
+proc verify_inclusion_proof
     # the full proof (many words) was written to memory by the caller;
     # only the pointer, index, and root travel on the stack
     # ...
