@@ -5,15 +5,15 @@ description: Guide to testing Miden smart contracts with MockChain (Miden v0.15)
 
 # Miden Testing Patterns (MockChain)
 
-These patterns target Miden **v0.15** (`miden-protocol`/`miden-standards`/`miden-testing` 0.15.x). Several types were renamed or removed in the v0.14 -> v0.15 migration (see the notes inline).
+These patterns target Miden **v0.15** (`miden-protocol`/`miden-standards`/`miden-testing` 0.15.x). Several types were renamed or removed in the migration to v0.15 (see the notes inline).
 
-The **authoritative working v0.15 example** is the `miden-bank` tutorial (`examples/miden-bank/integration/tests/{init_test,deposit_test,withdraw_test}.rs` plus `integration/src/helpers.rs` in [tutorials](https://github.com/0xMiden/tutorials)). Prefer it over the `project-template` counter test: the `project-template` may still be on v0.14, and its `counter_test.rs` uses the removed v0.14 types `AccountStorageMode` and `AccountType::RegularAccountImmutableCode`, the removed `.storage_mode(...)` builder method, a stale storage-slot naming format, and the bare `RandomCoin::new(... .root())` form — none of which compile under v0.15. Verify any copied snippet compiles under v0.15 before relying on it.
+The **authoritative working v0.15 example** is the `miden-bank` tutorial (`examples/miden-bank/integration/tests/{init_test,deposit_test,withdraw_test}.rs` plus `integration/src/helpers.rs` in [miden-bank](https://github.com/0xMiden/tutorials/tree/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/integration)). Prefer it over the `project-template` counter test: the `project-template` may still be on the pre-v0.15 line, and its `counter_test.rs` uses the removed pre-v0.15 types `AccountStorageMode` and `AccountType::RegularAccountImmutableCode`, the removed `.storage_mode(...)` builder method, a stale storage-slot naming format, and the bare `RandomCoin::new(... .root())` form — none of which compile under v0.15. Verify any copied snippet compiles under v0.15 before relying on it.
 
 ## Test File Setup
 
 Tests go in `integration/tests/`. All tests are async and use MockChain for local execution without a network.
 
-See [miden-bank deposit_test.rs](https://github.com/0xMiden/tutorials/blob/main/examples/miden-bank/integration/tests/deposit_test.rs) for a complete working test covering imports, MockChain setup, contract building, account creation with storage, note creation, transaction execution, and storage verification. The v0.15 imports it relies on are:
+See [miden-bank deposit_test.rs](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/integration/tests/deposit_test.rs) for a complete working test covering imports, MockChain setup, contract building, account creation with storage, note creation, transaction execution, and storage verification. The v0.15 imports it relies on are:
 
 ```rust
 use miden_client::{
@@ -31,7 +31,7 @@ use miden_testing::{Auth, MockChain};
 
 ### 1. Initialize MockChain Builder
 
-Start from `let mut builder = MockChain::builder();` (see `deposit_test.rs` in [miden-bank](https://github.com/0xMiden/tutorials/blob/main/examples/miden-bank/integration/tests/deposit_test.rs)).
+Start from `let mut builder = MockChain::builder();` (see `deposit_test.rs` in [miden-bank](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/integration/tests/deposit_test.rs)).
 
 ### 2. Create Sender/Wallet Accounts
 
@@ -75,7 +75,7 @@ Example: package `bank-account` with `[lib].namespace = "miden:bank-account/bank
 - `bank_account::bank::initialized`
 - `bank_account::bank::balances`
 
-Note the middle segment is `bank` (the interface segment), **not** `bank_storage` (the struct) and **not** `bank_account`, and there is no `miden_` org prefix. The `miden_counter_account::counter_contract::count_map` style seen in older `project-template` revisions is the **stale v0.14** format (those revisions have no `miden-project.toml` and pin `miden-client = "0.14"`); do not copy it for v0.15.
+Note the middle segment is `bank` (the interface segment), **not** `bank_storage` (the struct) and **not** `bank_account`, and there is no `miden_` org prefix. The `miden_counter_account::counter_contract::count_map` style seen in older `project-template` revisions is the **stale pre-v0.15** format (those revisions have no `miden-project.toml` and pin a pre-v0.15 `miden-client`); do not copy it for v0.15.
 
 The component's storage is declared with the v0.15 three-part component macro (`#[component_storage]` struct + `#[component]` trait + `#[component]` impl); the storage struct, not the trait, carries the `#[storage]` fields the slot names derive from. See the `rust-sdk-patterns` skill for the contract side.
 
@@ -133,7 +133,7 @@ let note = NoteBuilder::new(sender.id(), &mut note_rng)
     .build()?;
 ```
 
-> v0.15: `NoteScript::root()` returns the `NoteScriptRoot` newtype, not a `Word`. `RandomCoin::new` needs a `Word`, so convert the root explicitly with `Word::from(...root())` (equivalently `...root().into()` or `...root().as_word()`). The bare `RandomCoin::new(... .root())` form from v0.14 no longer type-checks.
+> v0.15: `NoteScript::root()` returns the `NoteScriptRoot` newtype, not a `Word`. `RandomCoin::new` needs a `Word`, so convert the root explicitly with `Word::from(...root())` (equivalently `...root().into()` or `...root().as_word()`). The bare `RandomCoin::new(... .root())` form no longer type-checks under v0.15.
 
 > v0.15: `Felt::new(u64)` is now **fallible** — it returns `Result<Felt, FeltFromIntError>` instead of an infallible value. `note_storage` takes `impl IntoIterator<Item = Felt>` and itself returns `Result`, so a bare `[Felt::new(42), Felt::new(0)]` is `[Result<Felt, _>; 2]` and will not type-check. Prefer the infallible `Felt::from(42_u32)` for in-range literals (`From<u8>/From<u16>/From<u32>` are infallible); for a `u64` use `Felt::new(n)?` or `Felt::new_unchecked(n)` (the form the bank withdraw test uses for note-storage inputs).
 
@@ -217,9 +217,9 @@ For contracts requiring initialization before use, each step usually needs its o
 
 `apply_delta()` is needed whenever you keep reading from / reusing the **same in-memory `Account`** across transactions — whether they land in the same block or in separate blocks. The canonical bank tests call `bank_account.apply_delta(&executed.account_delta())?` after every `execute()` (each followed by `add_pending_executed_transaction` + `prove_next_block`) precisely so later local reads like `bank_account.storage().get_map_item(...)` see the latest state. If you instead re-fetch via `mock_chain.committed_account(...)` after `prove_next_block()`, you can skip `apply_delta()`.
 
-See [miden-bank init_test.rs](https://github.com/0xMiden/tutorials/blob/main/examples/miden-bank/integration/tests/init_test.rs) for the init-via-tx-script flow and pre/post storage assertions, and [miden-bank withdraw_test.rs](https://github.com/0xMiden/tutorials/blob/main/examples/miden-bank/integration/tests/withdraw_test.rs) for a complete multi-transaction test demonstrating: initialize bank → deposit assets → withdraw assets (sequential transactions with state verification between steps, plus expected P2ID output-note verification).
+See [miden-bank init_test.rs](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/integration/tests/init_test.rs) for the init-via-tx-script flow and pre/post storage assertions, and [miden-bank withdraw_test.rs](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/integration/tests/withdraw_test.rs) for a complete multi-transaction test demonstrating: initialize bank → deposit assets → withdraw assets (sequential transactions with state verification between steps, plus expected P2ID output-note verification).
 
-See [miden-bank deposit_test.rs](https://github.com/0xMiden/tutorials/blob/main/examples/miden-bank/integration/tests/deposit_test.rs) for an end-to-end asset-bearing note test, including the negative `deposit_exceeds_max_should_fail` / `deposit_without_init_should_fail` cases that assert `tx_context.execute().await.is_err()`.
+See [miden-bank deposit_test.rs](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/integration/tests/deposit_test.rs) for an end-to-end asset-bearing note test, including the negative `deposit_exceeds_max_should_fail` / `deposit_without_init_should_fail` cases that assert `tx_context.execute().await.is_err()`.
 
 ## MockChain Block Numbering
 
@@ -242,14 +242,14 @@ The faucet must be set up first (see Step 3) and the sender wallet must hold suf
 
 ## Key Dependencies
 
-See `integration/Cargo.toml` in [miden-bank](https://github.com/0xMiden/tutorials/blob/main/examples/miden-bank/integration/Cargo.toml) for the dependency versions, and confirm it pins the 0.15 line (`miden-client`/`miden-standards`/`miden-testing` 0.15.x, `miden-mast-package` 0.23.x). v0.14 artifacts and serialized `.masl`/`.masp` blobs do not round-trip into 0.15; re-assemble from source.
+See `integration/Cargo.toml` in [miden-bank](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/integration/Cargo.toml) for the dependency versions, and confirm it pins the 0.15 line (`miden-client`/`miden-standards`/`miden-testing` 0.15.x, `miden-mast-package` 0.23.x). pre-v0.15 artifacts and serialized `.masl`/`.masp` blobs do not round-trip into v0.15; re-assemble from source.
 
 ## Validation Checklist
 
 - [ ] Test function is `async` and uses `#[tokio::test]`
 - [ ] Auth uses `AuthSchemeId::Falcon512Poseidon2` (or the equivalent `AuthScheme::Falcon512Poseidon2` — both name the same protocol enum)
 - [ ] `AccountBuilder` uses `.account_type(AccountType::Public | ::Private)` and no `.storage_mode(...)` / no `AccountStorageMode`
-- [ ] Storage slot names follow `<package_name>::<interface_segment>::<field_name>` (bare package name, `[lib].namespace` interface segment, e.g. `bank_account::bank::balances`) — not the stale v0.14 `miden_..._account::struct::field` format
+- [ ] Storage slot names follow `<package_name>::<interface_segment>::<field_name>` (bare package name, `[lib].namespace` interface segment, e.g. `bank_account::bank::balances`) — not the stale pre-v0.15 `miden_..._account::struct::field` format
 - [ ] Value slots without a schema default are seeded via `InitStorageData::insert_value(StorageValueName::from_slot_name(&slot), ..)`; `StorageValue<Word>` slots get a `Word` (e.g. `Word::default()`), not a bare integer (numeric `Into<WordValue>` yields an atomic string, not a felt-positioned word)
 - [ ] All contracts built before account/note creation
 - [ ] `NoteScript::root()` converted with `Word::from(...)` before seeding `RandomCoin`

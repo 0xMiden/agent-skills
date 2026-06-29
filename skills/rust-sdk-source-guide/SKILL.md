@@ -76,20 +76,22 @@ Clone these repos alongside your project for reference. Claude will explore them
 
 ```bash
 # Required: protocol layer — standard note types and account components (crate: miden-protocol)
-git clone --branch main https://github.com/0xMiden/protocol.git ../protocol
+git clone --branch v0.15.3 https://github.com/0xMiden/protocol.git ../protocol
 
-# Required: contains SDK, compiler, and 12 working examples
-# NOTE: clone the compiler from `next` (its `main` is far behind and not v0.15-aligned — see note below)
-git clone --branch next https://github.com/0xMiden/compiler.git ../compiler
+# Required: client API for deployment and chain interaction (formerly miden-client)
+git clone --branch v0.15.2 https://github.com/0xMiden/rust-sdk.git ../rust-sdk
 
-# Required: Rust SDK / client API for deployment and chain interaction
-git clone --branch main https://github.com/0xMiden/rust-sdk.git ../rust-sdk
+# Required: the Rust SDK macros + compiler. The compiler has no v0.15 release tag, so pin the
+# exact v0.15-aligned commit (the rev the v0.15 tutorials build against — see note below).
+git clone https://github.com/0xMiden/compiler.git ../compiler
+git -C ../compiler checkout 97eb019ded3a2d1f29d77639190bad5d3f0f099b
 
-# Recommended: complete working banking app with advanced patterns in the `examples/miden-bank` folder of the tutorials repo
-git clone --branch main https://github.com/0xMiden/tutorials.git ../tutorials
+# Recommended: complete working banking app with advanced patterns in `examples/miden-bank`.
+# Its v0.15 work lives on the migration branch until it lands on the default branch.
+git clone --branch kbg/chore/v15-migration https://github.com/0xMiden/tutorials.git ../tutorials
 ```
 
-**Note**: For v0.15 work the **compiler must be cloned from `next`, not `main`** — despite the name, `next` is the compiler's default branch and carries the v0.15-aligned protocol/assembly dependencies and SDK bindings. The compiler's `main` branch is far behind (v0.13-era protocol) and its SDK emits a link reference to the old `note::build_recipient` protocol procedure, which was renamed to `note::compute_and_store_recipient` in protocol v0.15 — building a v0.15 contract against compiler `main` therefore fails to link. (Note that compiler `next` still exposes `note::build_recipient` as a retained SDK alias for `compute_and_store_recipient`, so the API examples below resolve there.) The other repos are fine on `main` today: `protocol`, `rust-sdk`, and `tutorials` `main` currently resolve to v0.15.x. `--depth 1` is intentionally omitted so you can switch branches later if needed.
+**Note**: The compiler has **no v0.15 release tag**, and its branches move over time, so don't cite a branch as the audited source — pin the exact v0.15-aligned commit `97eb019` (the rev the v0.15 tutorials build against) for reproducible v0.15 work. It retains `note::build_recipient` as an SDK alias for `compute_and_store_recipient`, so the API examples below resolve there. For the other repos use the pinned refs above — `protocol` `v0.15.3`, `rust-sdk` (client) `v0.15.2`, and `tutorials` on its v0.15 migration branch — rather than the default branches, since `tutorials`' default branch has not yet been migrated to v0.15. `--depth 1` is intentionally omitted so you can check out other refs later if needed.
 
 ### `compiler/` — The Rust-to-MASM Compiler
 

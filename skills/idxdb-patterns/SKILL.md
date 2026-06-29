@@ -202,7 +202,7 @@ resets on every upgrade, so `ensureClientVersion` nukes the DB (close /
 minor than the stored one; same-major.minor patch bumps and downgrades
 just persist the new version without resetting (see the semver
 `sameMajorMinor` / `!semver.gt(...)` guard in `ensureClientVersion`).
-The 0.14 -> 0.15 minor bump does trigger it. Adding a table or
+A minor-version bump does trigger it. Adding a table or
 changing an index today therefore means:
 1. Update the `Table` enum + interface(s) in `schema.ts`
 2. Add the table/index to `V1_STORES` (additive, since the DB is nuked on

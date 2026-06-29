@@ -55,11 +55,11 @@ Two packages move together as the core SDK pair: `@miden-sdk/miden-sdk` (the WAS
 ```
 
 Notes:
-- **`@miden-sdk/react` and `@miden-sdk/miden-sdk` must match** — they link against the same WASM ABI, so a mixed pair (e.g. one on 0.14, one on 0.15) won't link. Upgrade them together.
-- **The `@miden-sdk/vite-plugin` does NOT track the core SDK version.** At v0.15.0 the plugin ships as `0.14.11` (and the example app pins `^0.14.5`) against `@miden-sdk/miden-sdk@0.15.0`; they only realign later in the 0.15 line. Always defer to your app's `package.json` (or the frontend template's) for the authoritative plugin pin — never assume `vite-plugin === miden-sdk`.
+- **`@miden-sdk/react` and `@miden-sdk/miden-sdk` must match** — they link against the same WASM ABI, so a mixed pair (e.g. one built against an older WASM ABI, one against the current) won't link. Upgrade them together.
+- **The `@miden-sdk/vite-plugin` does NOT track the core SDK version.** At v0.15.0 the plugin trails the core SDK by a minor and is NOT on the same version as `@miden-sdk/miden-sdk@0.15.0`; they only realign later in the 0.15 line. Always defer to your app's `package.json` (or the frontend template's) for the authoritative plugin pin — never assume `vite-plugin === miden-sdk`.
 - **The wallet adapters live in a separate repo.** `@miden-sdk/miden-wallet-adapter-react` (and its companion `@miden-sdk/miden-wallet-adapter-base`) are published from [`0xMiden/wallet-adapter`](https://github.com/0xMiden/wallet-adapter), not the web-sdk repo, and are versioned independently. Confirm the exact package names and versions against that repo (or your app's `package.json`); the `-react` adapter's `peerDependencies` pin `@miden-sdk/react` at `^<major>.<minor>.x`, so a patch-level gap from the core SDK is expected and fine.
 - **Always check your app's `package.json` (or the [frontend template](https://github.com/0xMiden/frontend-template)'s) for the authoritative versions** — this skill intentionally doesn't inline them because they shift across SDK releases.
-- When you bump, clean-install: `rm -rf node_modules yarn.lock && yarn install`. Vite's dep optimizer caches resolved SDK paths, and stale caches can surface as `ERR_BLOCKED_BY_RESPONSE` or spurious `Failed to fetch` errors on module workers.
+- When you bump, do a clean install with your project's package manager: delete `node_modules` and the lockfile it actually uses, then reinstall. The web-sdk uses pnpm (`rm -rf node_modules pnpm-lock.yaml && pnpm install`). For an app repo, use whatever package manager its lockfile implies — e.g. the frontend template's v0.15 branch ships a `yarn.lock` (`rm -rf node_modules && yarn install`), while another app may use `npm ci` or `pnpm install`. Vite's dep optimizer caches resolved SDK paths, and stale caches can surface as `ERR_BLOCKED_BY_RESPONSE` or spurious `Failed to fetch` errors on module workers.
 
 ## Production Deployment Headers
 

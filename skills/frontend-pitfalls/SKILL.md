@@ -74,7 +74,7 @@ export default defineConfig({
 });
 ```
 
-Do not rely on the plugin's own default — `@miden-sdk/vite-plugin` defaults `crossOriginIsolation` to `false` (verified false in the executable source at every v0.14–v0.15 tag; note the plugin README incorrectly says the default is `true`). For MT you must pass `true` explicitly. For ST (the default build) leaving it `false` is correct — the example wallet uses bare `midenVitePlugin()` precisely because it is ST, and because `same-origin` COOP would nullify `window.opener` in the Para OAuth popups it pairs with via `paraVitePlugin()`.
+Do not rely on the plugin's own default — `@miden-sdk/vite-plugin` defaults `crossOriginIsolation` to `false` (verified false in the executable source across the released tags; note the plugin README incorrectly says the default is `true`). For MT you must pass `true` explicitly. For ST (the default build) leaving it `false` is correct — the example wallet uses bare `midenVitePlugin()` precisely because it is ST, and because `same-origin` COOP would nullify `window.opener` in the Para OAuth popups it pairs with via `paraVitePlugin()`.
 
 For MT, COOP/COEP must also be set on the production server — the plugin covers only the Vite dev and preview servers, not your real production host. See `vite-wasm-setup` for per-host configs (Nginx, Vercel, Cloudflare).
 
@@ -169,7 +169,7 @@ export default defineConfig({
 |--------|-----------------------|--------------------|---------|
 | `crossOriginIsolation` | `false` | Only when importing the MT variants (`/mt`, `/mt/lazy`) | Emit COOP/COEP headers for SharedArrayBuffer |
 
-For the **default single-threaded build**, leave `crossOriginIsolation` at its `false` default — the ST WASM loads in any browser context and needs no headers. Pass `crossOriginIsolation: true` **only** when you opt into the multi-threaded variants for local proving; without the headers the MT WASM can't construct shared memory and fails to instantiate. (The plugin README at v0.15.0 incorrectly documents the default as `true`; the executable source default is `false`, unchanged across v0.14–v0.15. Do not trust the README.) The shipped example wallet uses bare `midenVitePlugin()` because it is ST (and because isolation would break the Para OAuth popups it pairs with via `paraVitePlugin()`) — see FP3. For an MT production deployment, set the same COOP/COEP headers at your real production host — the plugin only injects them into the Vite dev and preview servers. See `vite-wasm-setup` for host-specific configs.
+For the **default single-threaded build**, leave `crossOriginIsolation` at its `false` default — the ST WASM loads in any browser context and needs no headers. Pass `crossOriginIsolation: true` **only** when you opt into the multi-threaded variants for local proving; without the headers the MT WASM can't construct shared memory and fails to instantiate. (The plugin README at v0.15.0 incorrectly documents the default as `true`; the executable source default is `false`, unchanged across the released tags. Do not trust the README.) The shipped example wallet uses bare `midenVitePlugin()` because it is ST (and because isolation would break the Para OAuth popups it pairs with via `paraVitePlugin()`) — see FP3. For an MT production deployment, set the same COOP/COEP headers at your real production host — the plugin only injects them into the Vite dev and preview servers. See `vite-wasm-setup` for host-specific configs.
 
 ## FP9: React StrictMode Double-Init (LOW)
 

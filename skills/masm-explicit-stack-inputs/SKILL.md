@@ -24,7 +24,7 @@ Hidden memory inputs make the procedure's signature a lie — a reader of `Input
 
 ```masm
 # Good
-#! Inputs:  [note_index, ASSET]
+#! Inputs:  [note_index, ASSET_KEY, ASSET_VALUE]
 #! Outputs: []
 proc append_asset_to_note
     # ... uses values directly from the stack

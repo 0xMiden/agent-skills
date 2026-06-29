@@ -166,6 +166,6 @@ Look for:
 | Version mismatch error | Node and client crate versions differ | Run a v0.15 node built from the node source pinned in your client's `Cargo.lock`; the protocol version is negotiated at connect and a mismatch is rejected |
 | Transaction rejected | Invalid proof or state | Check contract code, reset node data, try again |
 | Account not found after creation | Haven't synced | Call `sync_state()` after account creation |
-| Store errors or deserialization failures | Stale state from previous session (or 0.14 artifacts, which do not round-trip) | Wipe the node data, keystore, and client store, then re-bootstrap from a fresh genesis |
+| Store errors or deserialization failures | Stale state from previous session (or artifacts from an earlier protocol version, which do not round-trip) | Wipe the node data, keystore, and client store, then re-bootstrap from a fresh genesis |
 | `.sqlite_store(..)` does not compile | Extension trait not in scope | `use miden_client_sqlite_store::ClientBuilderSqliteExt;` |
 | Block not produced | Node produces blocks on the sequencer's configured cadence | Submit a transaction; check the sequencer's `--block.interval` (and `--batch.interval`) settings, or consult `miden-node sequencer --help` |
