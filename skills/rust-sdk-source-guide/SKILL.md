@@ -81,17 +81,19 @@ git clone --branch v0.15.3 https://github.com/0xMiden/protocol.git ../protocol
 # Required: client API for deployment and chain interaction (formerly miden-client)
 git clone --branch v0.15.2 https://github.com/0xMiden/rust-sdk.git ../rust-sdk
 
-# Required: the Rust SDK macros + compiler. The compiler has no v0.15 release tag, so pin the
-# exact v0.15-aligned commit (the rev the v0.15 tutorials build against — see note below).
-git clone https://github.com/0xMiden/compiler.git ../compiler
-git -C ../compiler checkout 97eb019ded3a2d1f29d77639190bad5d3f0f099b
+# Required: the Rust SDK macros + compiler, released as v0.9.0 (moves the stack to VM v0.23 /
+# protocol v0.15 and ships the guest SDK crate `miden` at 0.13, build tool `cargo-miden` at 0.9).
+# Clone the release tag directly — no more git-rev pins.
+git clone --branch v0.9.0 https://github.com/0xMiden/compiler.git ../compiler
 
 # Recommended: complete working banking app with advanced patterns in `examples/miden-bank`.
-# Its v0.15 work lives on the migration branch until it lands on the default branch.
+# Its v0.15 work lives on the migration branch (PR #204) until it lands on the default branch;
+# pin the reviewed commit for reproducibility.
 git clone --branch kbg/chore/v15-migration https://github.com/0xMiden/tutorials.git ../tutorials
+git -C ../tutorials checkout a255af7959a441d9a027178631c666949b4af086
 ```
 
-**Note**: The compiler has **no v0.15 release tag**, and its branches move over time, so don't cite a branch as the audited source — pin the exact v0.15-aligned commit `97eb019` (the rev the v0.15 tutorials build against) for reproducible v0.15 work. It retains `note::build_recipient` as an SDK alias for `compute_and_store_recipient`, so the API examples below resolve there. For the other repos use the pinned refs above — `protocol` `v0.15.3`, `rust-sdk` (client) `v0.15.2`, and `tutorials` on its v0.15 migration branch — rather than the default branches, since `tutorials`' default branch has not yet been migrated to v0.15. `--depth 1` is intentionally omitted so you can check out other refs later if needed.
+**Note**: The compiler is now **released as `v0.9.0`** — this is the release that moves the stack to VM v0.23 / protocol v0.15. Don't conflate the version schemes: the network/protocol is **v0.15**, but the compiler workspace and the `cargo-miden` build tool are **`0.9.0`**, and the guest SDK crates (`miden`, `miden-base-macros`, `miden-base-sys`) are **`0.13.0`** — so contracts depend on `miden = "0.13"` and integration/tooling on `cargo-miden = "0.9"`. The compiler retains `note::build_recipient` as an SDK-friendly alias for `compute_and_store_recipient`, so the API examples below resolve there. Use the pinned refs above — `compiler` `v0.9.0`, `protocol` `v0.15.3`, `rust-sdk` (client) `v0.15.2`, and `tutorials` pinned at commit `a255af7` on its v0.15 migration branch — rather than the default branches, since `tutorials`' default branch has not yet been migrated to v0.15. `--depth 1` is intentionally omitted so you can check out other refs later if needed.
 
 ### `compiler/` — The Rust-to-MASM Compiler
 
@@ -165,8 +167,7 @@ Accounts can include standard components (BasicWallet, authentication) alongside
 Create output notes (like P2ID) from within contract code. Requires building a recipient with `note::build_recipient(serial_num, script_root, storage)` and then using `output_note::create(...)`. The `tutorials/examples/miden-bank/` withdraw pattern demonstrates this end-to-end.
 
 ### Note Storage Protocol
-Notes receive storage data as `Vec<Felt>` which is deserialized into the note object. In the `#[note_script]` method the `self` is deserialized from the note storage (`active_note::get_storage()`).
-Attached assets are separate and should be read with `active_note::get_assets()`.
+A note's storage is exposed to its `#[note_script]` as a `Vec<Felt>` via `active_note::get_storage()`; the script reads and parses the items it needs by index. In `tutorials/examples/miden-bank/` the note structs are markers (not auto-populated from storage) and the script slices explicitly — e.g. the withdraw-request note asserts `storage.len() == 14`, then reconstructs the asset, serial number, tag, and note type from the felts. Attached assets are separate and are read with `active_note::get_assets()`.
 
 ### Atomic Swaps
 The standard SwapNote in `protocol/` (`crates/miden-standards/src/note/swap.rs`) creates a payback P2ID note automatically when consumed. Explore the SwapNote builder to understand tag construction, storage layout, and the payback mechanism.

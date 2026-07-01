@@ -46,9 +46,9 @@ impl Bank for BankStorage {
 
 Only the trait's methods are exported to WIT. Inherent (`impl BankStorage`) methods stay private to the contract — use them for helpers like key derivation.
 
-See [miden-bank bank-account](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/contracts/bank-account/src/lib.rs) for a complete working example demonstrating the three-part pattern, typed `StorageValue<Word>` / `StorageMap<Word, Felt>`, `get()`/`set()`, felt arithmetic, and private inherent helpers.
+See [miden-bank bank-account](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/bank-account/src/lib.rs) for a complete working example demonstrating the three-part pattern, typed `StorageValue<Word>` / `StorageMap<Word, Felt>`, `get()`/`set()`, felt arithmetic, and private inherent helpers.
 
-**Project metadata for accounts:** See `contracts/bank-account/miden-project.toml` in [miden-bank](https://github.com/0xMiden/tutorials/tree/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/contracts/bank-account) for the `[lib] kind = "account-component"`, the `namespace`, and the `supported-types`. The `Cargo.toml` only needs `crate-type = ["cdylib"]` and the `miden` dependency.
+**Project metadata for accounts:** See `contracts/bank-account/miden-project.toml` in [miden-bank](https://github.com/0xMiden/tutorials/tree/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/bank-account) for the `[lib] kind = "account-component"`, the `namespace`, and the `supported-types`. The `Cargo.toml` only needs `crate-type = ["cdylib"]` and the `miden` dependency.
 
 ### Note Script (`#[note]` / `#[note_script]`)
 Executes when a note is consumed by an account. Can call component methods on the consuming account.
@@ -80,9 +80,9 @@ impl DepositNote {
 }
 ```
 
-See [miden-bank deposit-note](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/contracts/deposit-note/src/lib.rs) for a working example demonstrating `#[note]`, `#[note_script]`, the `#[account(...)]` wrapper, and a cross-component call.
+See [miden-bank deposit-note](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/deposit-note/src/lib.rs) for a working example demonstrating `#[note]`, `#[note_script]`, the `#[account(...)]` wrapper, and a cross-component call.
 
-**Project metadata for notes:** See `contracts/deposit-note/miden-project.toml` in [miden-bank](https://github.com/0xMiden/tutorials/tree/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/contracts/deposit-note) for `[lib] kind = "note"`, the `namespace`, the path dependency on the called component, and the cross-component `[package.metadata.miden.dependencies]` WIT entry.
+**Project metadata for notes:** See `contracts/deposit-note/miden-project.toml` in [miden-bank](https://github.com/0xMiden/tutorials/tree/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/deposit-note) for `[lib] kind = "note"`, the `namespace`, the path dependency on the called component, and the cross-component `[package.metadata.miden.dependencies]` WIT entry.
 
 ### Transaction Script (`#[tx_script]`)
 One-off logic executed in the context of an account. Used for initialization, admin operations, etc.
@@ -104,9 +104,9 @@ fn run(_arg: Word, account: &mut Wallet) {
 }
 ```
 
-See [miden-bank init-tx-script](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/contracts/init-tx-script/src/lib.rs) for the working example.
+See [miden-bank init-tx-script](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/init-tx-script/src/lib.rs) for the working example.
 
-**Project metadata for tx scripts:** Like a note, but `[lib] kind = "tx-script"` and `namespace = "miden:base/transaction-script@1.0.0"`. See `contracts/init-tx-script/miden-project.toml` in [miden-bank](https://github.com/0xMiden/tutorials/tree/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/contracts/init-tx-script).
+**Project metadata for tx scripts:** Like a note, but `[lib] kind = "tx-script"` and `namespace = "miden:base/transaction-script@1.0.0"`. See `contracts/init-tx-script/miden-project.toml` in [miden-bank](https://github.com/0xMiden/tutorials/tree/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/init-tx-script).
 
 ## Storage Slot Naming
 
@@ -118,7 +118,7 @@ Storage slot names are part of the on-chain storage ABI and are derived as:
 
 The **middle segment is the interface segment of the `[lib].namespace`** in `miden-project.toml` (the part between the last `/` and `@`), snake-cased — **not** the snake-cased struct name. This deliberately decouples slot names from private Rust renames.
 
-Example: package `bank-account` + `namespace = "miden:bank-account/bank@0.1.0"` + field `balances` derives slot `bank_account::bank::balances` (see [miden-bank deposit_test.rs](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/integration/tests/deposit_test.rs), `bank_storage_slots()`). Note the version suffix (`@0.1.0`) is ignored so the slot name stays stable. Slots are derived from the slot name; there is no `slot(...)` attribute. See the rust-sdk-pitfalls skill (P5) for more on slot naming.
+Example: package `bank-account` + `namespace = "miden:bank-account/bank@0.1.0"` + field `balances` derives slot `bank_account::bank::balances` (see [miden-bank deposit_test.rs](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/integration/tests/deposit_test.rs), `bank_storage_slots()`). Note the version suffix (`@0.1.0`) is ignored so the slot name stays stable. Slots are derived from the slot name; there is no `slot(...)` attribute. See the rust-sdk-pitfalls skill (P5) for more on slot naming.
 
 ## Storage Types
 
@@ -146,7 +146,7 @@ Example: package `bank-account` + `namespace = "miden:bank-account/bank@0.1.0"` 
 
 **Constructor**: `Asset::new(key, value)` builds an Asset from its vault key word and value word (the arguments are `impl Into<Word>`, so e.g. `Asset::new(key_word, value_word)` or from `[Felt; 4]`).
 
-See [miden-bank bank-account](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/contracts/bank-account/src/lib.rs) for complete asset handling patterns including deposit, withdrawal, and balance tracking.
+See [miden-bank bank-account](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/bank-account/src/lib.rs) for complete asset handling patterns including deposit, withdrawal, and balance tracking.
 
 ```rust
 pub struct Asset {
@@ -173,7 +173,7 @@ native_account::remove_asset(asset);
 
 ## P2ID Output Note Creation
 
-To send assets to another account, create a P2ID (Pay-to-ID) output note. See [miden-bank bank-account](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/contracts/bank-account/src/lib.rs) `create_p2id_note()` for a complete working implementation (builds the recipient with `note::build_recipient`, creates the note with `output_note::create`, then `native_account::remove_asset` + `output_note::add_asset`).
+To send assets to another account, create a P2ID (Pay-to-ID) output note. See [miden-bank bank-account](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/bank-account/src/lib.rs) `create_p2id_note()` for a complete working implementation (builds the recipient with `note::build_recipient`, creates the note with `output_note::create`, then `native_account::remove_asset` + `output_note::add_asset`).
 
 ## Cross-Component Dependencies
 
@@ -182,9 +182,9 @@ To call another component's methods from a note or tx script, declare the depend
 - `[dependencies]` — a normal path (or registry) dependency on the component crate.
 - `[package.metadata.miden.dependencies]` — the generated WIT for the component, e.g. `bank-account = { wit = "../bank-account/target/generated-wit/" }`. The WIT is produced by building the dependency component first.
 
-See `contracts/deposit-note/miden-project.toml` in [miden-bank](https://github.com/0xMiden/tutorials/tree/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/contracts/deposit-note) for a working example showing both sections.
+See `contracts/deposit-note/miden-project.toml` in [miden-bank](https://github.com/0xMiden/tutorials/tree/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/deposit-note) for a working example showing both sections.
 
-Then expose the dependency's methods on the consuming account by declaring an `#[account(package::Interface)]` wrapper (e.g. `#[account(bank_account::Bank)] pub struct Wallet;`) and calling methods on the injected `account` parameter. The package name is the dependency's Rust-style name (`-` replaced with `_`) and `Interface` is its exported WIT interface in UpperCamelCase. See `contracts/deposit-note/src/lib.rs` in [miden-bank](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/contracts/deposit-note/src/lib.rs).
+Then expose the dependency's methods on the consuming account by declaring an `#[account(package::Interface)]` wrapper (e.g. `#[account(bank_account::Bank)] pub struct Wallet;`) and calling methods on the injected `account` parameter. The package name is the dependency's Rust-style name (`-` replaced with `_`) and `Interface` is its exported WIT interface in UpperCamelCase. See `contracts/deposit-note/src/lib.rs` in [miden-bank](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/deposit-note/src/lib.rs).
 
 ## Common Type Conversions
 
@@ -213,7 +213,7 @@ let n: u64 = f.as_canonical_u64();
 
 ## No-std Requirements
 
-Every contract file must start with `#![no_std]` and `#![feature(alloc_error_handler)]`. See any contract under `contracts/` in [miden-bank](https://github.com/0xMiden/tutorials/tree/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/contracts) for the pattern.
+Every contract file must start with `#![no_std]` and `#![feature(alloc_error_handler)]`. See any contract under `contracts/` in [miden-bank](https://github.com/0xMiden/tutorials/tree/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts) for the pattern.
 
 If you need heap allocation (Vec, String, etc.):
 ```rust
@@ -227,9 +227,9 @@ The bank-account contract uses `#[macro_use] extern crate alloc;` so the `vec!` 
 
 Note scripts cannot call `native_account::add_asset()` directly (see pitfall P11). The canonical pattern is for an account component to expose a public (trait) method that wraps `native_account::add_asset()`, and the note script calls that method through the `#[account(...)]` wrapper.
 
-See [miden-bank bank-account deposit()](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/contracts/bank-account/src/lib.rs) for the component side: the `deposit()` trait method validates the deposit, updates storage, and calls `native_account::add_asset()`.
+See [miden-bank bank-account deposit()](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/bank-account/src/lib.rs) for the component side: the `deposit()` trait method validates the deposit, updates storage, and calls `native_account::add_asset()`.
 
-See [miden-bank deposit-note](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/contracts/deposit-note/src/lib.rs) for the note side: the note declares `#[account(bank_account::Bank)] pub struct Wallet;` and, inside `#[note_script] fn run(self, _arg: Word, account: &mut Wallet)`, calls `account.deposit(depositor, asset)` on that wrapper. It is **not** a free `bank_account::deposit()` call.
+See [miden-bank deposit-note](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/deposit-note/src/lib.rs) for the note side: the note declares `#[account(bank_account::Bank)] pub struct Wallet;` and, inside `#[note_script] fn run(self, _arg: Word, account: &mut Wallet)`, calls `account.deposit(depositor, asset)` on that wrapper. It is **not** a free `bank_account::deposit()` call.
 
 ## Validation Checklist
 

@@ -7,19 +7,19 @@ description: Guide to testing Miden smart contracts with MockChain (Miden v0.15)
 
 These patterns target Miden **v0.15** (`miden-protocol`/`miden-standards`/`miden-testing` 0.15.x). Several types were renamed or removed in the migration to v0.15 (see the notes inline).
 
-The **authoritative working v0.15 example** is the `miden-bank` tutorial (`examples/miden-bank/integration/tests/{init_test,deposit_test,withdraw_test}.rs` plus `integration/src/helpers.rs` in [miden-bank](https://github.com/0xMiden/tutorials/tree/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/integration)). Prefer it over the `project-template` counter test: the `project-template` may still be on the pre-v0.15 line, and its `counter_test.rs` uses the removed pre-v0.15 types `AccountStorageMode` and `AccountType::RegularAccountImmutableCode`, the removed `.storage_mode(...)` builder method, a stale storage-slot naming format, and the bare `RandomCoin::new(... .root())` form — none of which compile under v0.15. Verify any copied snippet compiles under v0.15 before relying on it.
+The **authoritative working v0.15 example** is the `miden-bank` tutorial (`examples/miden-bank/integration/tests/{init_test,deposit_test,withdraw_test}.rs` plus `integration/src/helpers.rs` in [miden-bank](https://github.com/0xMiden/tutorials/tree/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/integration)). Prefer it over the `project-template` counter test: the `project-template` may still be on the pre-v0.15 line, and its `counter_test.rs` uses the removed pre-v0.15 types `AccountStorageMode` and `AccountType::RegularAccountImmutableCode`, the removed `.storage_mode(...)` builder method, a stale storage-slot naming format, and the bare `RandomCoin::new(... .root())` form — none of which compile under v0.15. Verify any copied snippet compiles under v0.15 before relying on it.
 
 ## Test File Setup
 
 Tests go in `integration/tests/`. All tests are async and use MockChain for local execution without a network.
 
-See [miden-bank deposit_test.rs](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/integration/tests/deposit_test.rs) for a complete working test covering imports, MockChain setup, contract building, account creation with storage, note creation, transaction execution, and storage verification. The v0.15 imports it relies on are:
+See [miden-bank deposit_test.rs](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/integration/tests/deposit_test.rs) for a complete working test covering imports, MockChain setup, contract building, account creation with storage, note creation, transaction execution, and storage verification. The v0.15 imports it relies on are:
 
 ```rust
 use miden_client::{
     account::{component::{InitStorageData, StorageValueName}, StorageSlotName},
     auth::AuthSchemeId,
-    note::{Note, NoteAssets, NoteType, PartialNoteMetadata},
+    note::NoteAssets,
     transaction::RawOutputNote,
     Felt, Word,
 };
@@ -31,7 +31,7 @@ use miden_testing::{Auth, MockChain};
 
 ### 1. Initialize MockChain Builder
 
-Start from `let mut builder = MockChain::builder();` (see `deposit_test.rs` in [miden-bank](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/integration/tests/deposit_test.rs)).
+Start from `let mut builder = MockChain::builder();` (see `deposit_test.rs` in [miden-bank](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/integration/tests/deposit_test.rs)).
 
 ### 2. Create Sender/Wallet Accounts
 
@@ -217,9 +217,9 @@ For contracts requiring initialization before use, each step usually needs its o
 
 `apply_delta()` is needed whenever you keep reading from / reusing the **same in-memory `Account`** across transactions — whether they land in the same block or in separate blocks. The canonical bank tests call `bank_account.apply_delta(&executed.account_delta())?` after every `execute()` (each followed by `add_pending_executed_transaction` + `prove_next_block`) precisely so later local reads like `bank_account.storage().get_map_item(...)` see the latest state. If you instead re-fetch via `mock_chain.committed_account(...)` after `prove_next_block()`, you can skip `apply_delta()`.
 
-See [miden-bank init_test.rs](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/integration/tests/init_test.rs) for the init-via-tx-script flow and pre/post storage assertions, and [miden-bank withdraw_test.rs](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/integration/tests/withdraw_test.rs) for a complete multi-transaction test demonstrating: initialize bank → deposit assets → withdraw assets (sequential transactions with state verification between steps, plus expected P2ID output-note verification).
+See [miden-bank init_test.rs](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/integration/tests/init_test.rs) for the init-via-tx-script flow and pre/post storage assertions, and [miden-bank withdraw_test.rs](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/integration/tests/withdraw_test.rs) for a complete multi-transaction test demonstrating: initialize bank → deposit assets → withdraw assets (sequential transactions with state verification between steps, plus expected P2ID output-note verification).
 
-See [miden-bank deposit_test.rs](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/integration/tests/deposit_test.rs) for an end-to-end asset-bearing note test, including the negative `deposit_exceeds_max_should_fail` / `deposit_without_init_should_fail` cases that assert `tx_context.execute().await.is_err()`.
+See [miden-bank deposit_test.rs](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/integration/tests/deposit_test.rs) for an end-to-end asset-bearing note test, including the negative `deposit_exceeds_max_should_fail` / `deposit_without_init_should_fail` cases that assert `tx_context.execute().await.is_err()`.
 
 ## MockChain Block Numbering
 
@@ -242,7 +242,7 @@ The faucet must be set up first (see Step 3) and the sender wallet must hold suf
 
 ## Key Dependencies
 
-See `integration/Cargo.toml` in [miden-bank](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/integration/Cargo.toml) for the dependency versions, and confirm it pins the 0.15 line (`miden-client`/`miden-standards`/`miden-testing` 0.15.x, `miden-mast-package` 0.23.x). pre-v0.15 artifacts and serialized `.masl`/`.masp` blobs do not round-trip into v0.15; re-assemble from source.
+See `integration/Cargo.toml` in [miden-bank](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/integration/Cargo.toml) for the dependency versions. Under the released compiler v0.9.0 the integration crate depends on `cargo-miden = "0.9"` (its `build_project_in_dir` helper calls `cargo_miden::run`) alongside the 0.15 line (`miden-client`/`miden-standards`/`miden-testing` 0.15.x, `miden-mast-package` 0.23.x) — no git-rev/branch pins. The contracts it builds depend on the guest SDK `miden = "0.13"`. pre-v0.15 artifacts and serialized `.masl`/`.masp` blobs do not round-trip into v0.15; re-assemble from source.
 
 ## Validation Checklist
 

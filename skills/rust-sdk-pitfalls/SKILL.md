@@ -128,7 +128,7 @@ Storage slot names follow a strict pattern. Getting it wrong often returns the d
 | `bank-account` | `miden:bank-account/bank@0.1.0` | `balances` | `bank_account::bank::balances` |
 | `bank-account` | `miden:bank-account/bank@0.1.0` | `initialized` | `bank_account::bank::initialized` |
 
-**Caveat (toolchain-version dependent)**: This naming is a property of the Rust SDK contract macros, which live in the `miden-base-macros` crate (v0.12.0, part of the v0.15 Rust SDK family alongside `miden` and `miden-base`, all 0.12.0; the separate midenc/compiler workspace is versioned 0.8.1). The slot-naming algorithm — `package_name::snake_case(interface_segment)::field`, with non-`[A-Za-z0-9_]` mapped to `_` and `@version` stripped — has been stable, but verify against your installed toolchain rather than assuming a protocol version.
+**Caveat (toolchain-version dependent)**: This naming is a property of the Rust SDK contract macros, which live in the `miden-base-macros` crate (0.13.0, part of the released-compiler-v0.9.0 Rust SDK family alongside `miden` and `miden-base-sys`, all 0.13.0; the separate compiler / `cargo-miden` workspace is versioned 0.9.0). Never conflate these with the protocol/network version (v0.15). The slot-naming algorithm — `package_name::snake_case(interface_segment)::field`, with non-`[A-Za-z0-9_]` mapped to `_` and `@version` stripped — has been stable, but verify against your installed toolchain rather than assuming a protocol version.
 
 ## P6: No-std Environment
 
@@ -221,7 +221,7 @@ fn p2id_note_root() -> Word {
 
 **Risk**: If miden-standards updates the P2ID script, any hardcoded digest becomes invalid and withdrawals silently fail.
 
-**NoteType for P2ID**: P2ID output notes created in contract code should use the private note type value via `NoteType::from(felt!(0))` (see P10). In v0.15 the kernel rejects any note type other than `0` (private) or `1` (public) with `ERR_NOTE_INVALID_TYPE`. See [miden-bank withdraw](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/contracts/bank-account/src/lib.rs) for the working pattern.
+**NoteType for P2ID**: P2ID output notes created in contract code are constructed with `NoteType::from(felt!(...))` — `felt!(0)` for private, `felt!(1)` for public (see P10). In v0.15 the kernel rejects any note type other than `0` (private) or `1` (public) with `ERR_NOTE_INVALID_TYPE`. See [miden-bank withdraw](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/bank-account/src/lib.rs) for the working pattern (the note type is read from the withdraw-request note's storage and forwarded through `NoteType::from(note_type)`).
 
 ## P10: NoteType Variants Unavailable in Compiler SDK
 
@@ -236,7 +236,7 @@ Named enum variants (`NoteType::Private`, `NoteType::Public`) don't exist in con
 
 **v0.15 encoding changed**: The note-type encoding is now 1-bit — `Private = 0` (and `Private` is the protocol default) and `Public = 1`. Only these two values exist; there is no `Encrypted` type. Because the SDK wrapper does no validation, an out-of-range value (e.g. `felt!(2)` or `felt!(3)`) is not caught at compile time — it is rejected at execution time by the kernel with `ERR_NOTE_INVALID_TYPE` (the kernel asserts `note_type <= 1`). Emitting the old pre-v0.15 value `felt!(2)` for a private note will panic on a v0.15 node.
 
-See [miden-bank bank-account](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/contracts/bank-account/src/lib.rs) for `NoteType::from(note_type)` usage.
+See [miden-bank bank-account](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/bank-account/src/lib.rs) for `NoteType::from(note_type)` usage.
 
 ## P11: Note Scripts Cannot Call Native Account Functions
 
@@ -244,7 +244,7 @@ See [miden-bank bank-account](https://github.com/0xMiden/tutorials/blob/078e2fb2
 
 Note scripts cannot call `native_account::add_asset()` or other `native_account::` functions directly. The kernel's `authenticate_account_origin` check rejects these calls from a note context. Instead, note scripts must call an account component method, which then calls `native_account::add_asset()` internally.
 
-See [miden-bank deposit-note](https://github.com/0xMiden/tutorials/blob/078e2fb289fc299359ce44c3900bb9e59be93d40/examples/miden-bank/contracts/deposit-note/src/lib.rs) for the correct pattern: the note script declares the consuming account via `#[account(bank_account::Bank)] pub struct Wallet;` and, inside `#[note_script] fn run(self, _arg: Word, account: &mut Wallet)`, calls `account.deposit(depositor, asset)` on that wrapper. The `deposit()` component method then calls `native_account::add_asset()` internally. It is NOT a free `bank_account::deposit()` call.
+See [miden-bank deposit-note](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/deposit-note/src/lib.rs) for the correct pattern: the note script declares the consuming account via `#[account(bank_account::Bank)] pub struct Wallet;` and, inside `#[note_script] fn run(self, _arg: Word, account: &mut Wallet)`, calls `account.deposit(depositor, asset)` on that wrapper. The `deposit()` component method then calls `native_account::add_asset()` internally. It is NOT a free `bank_account::deposit()` call.
 
 ## P12: Note Inputs Are Immutable After Creation
 
