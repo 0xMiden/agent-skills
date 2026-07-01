@@ -126,20 +126,21 @@ Each returns its own action function plus `error` and `reset`. The two families 
 
 **Transaction stages**: `"idle"` → `"executing"` → `"proving"` → `"submitting"` → `"complete"`
 
-Import `AuthScheme` for the `authScheme` option (re-exported from the package root):
+Auth scheme for the create/import hooks. The `AuthScheme` re-exported from the package root is the friendly string const `{ Falcon: "falcon", ECDSA: "ecdsa" }`:
 
 ```tsx
 import { AuthScheme } from "@miden-sdk/react";
-// AuthScheme.AuthRpoFalcon512 = 2 (default)
-// AuthScheme.AuthEcdsaK256Keccak = 1
+// AuthScheme.Falcon === "falcon"   |   AuthScheme.ECDSA === "ecdsa"
 ```
+
+> **Known issue ([web-sdk#223](https://github.com/0xMiden/web-sdk/issues/223)):** `useCreateWallet` / `useCreateFaucet` / `useImportAccount` forward `authScheme` straight to the low-level `WebClient.newWallet`, which currently expects the **numeric** wasm enum (`AuthRpoFalcon512 = 2`, `AuthEcdsaK256Keccak = 1`), not the friendly string, and the default resolves to `undefined` (which hangs the call). Until it is fixed, pass the numeric value: `authScheme: 2` (Falcon) or `authScheme: 1` (ECDSA). The examples below use `2`.
 
 ### useCreateWallet()
 ```tsx
 const { createWallet, wallet, isCreating, error, reset } = useCreateWallet();
 const account = await createWallet({
   storageMode: "private",                   // "private" | "public". Default: "private"
-  authScheme: AuthScheme.AuthRpoFalcon512,  // Default: AuthScheme.AuthRpoFalcon512
+  authScheme: 2,                            // 2 = Falcon; friendly AuthScheme.* not accepted here yet (web-sdk#223)
   initSeed: seedBytes,                       // optional: Uint8Array for a deterministic account id
 });
 ```
@@ -153,7 +154,7 @@ const account = await createFaucet({
   decimals: 8,                              // Default: 8
   maxSupply: 1000000n,                      // bigint | number
   storageMode: "private",                   // "private" | "public". Default: "private"
-  authScheme: AuthScheme.AuthRpoFalcon512,  // Default: AuthScheme.AuthRpoFalcon512
+  authScheme: 2,                            // 2 = Falcon; friendly AuthScheme.* not accepted here yet (web-sdk#223)
 });
 ```
 
@@ -171,7 +172,7 @@ const account = await importAccount({ type: "file", file: accountFileOrBytes });
 const account = await importAccount({
   type: "seed",
   seed: seedBytes,
-  authScheme: AuthScheme.AuthRpoFalcon512,  // optional. Default: AuthScheme.AuthRpoFalcon512
+  authScheme: 2,                            // optional; 2 = Falcon (web-sdk#223 — friendly AuthScheme.* not accepted here yet)
 });
 ```
 
@@ -283,7 +284,7 @@ const { initialize, sessionAccountId, isReady, step, error, reset } = useSession
   assetId: faucetId,              // optional: for note filtering
   walletOptions: {                // optional: session wallet creation options
     storageMode: "private",                   // "private" | "public"
-    authScheme: AuthScheme.AuthRpoFalcon512,
+    authScheme: 2,                            // 2 = Falcon (web-sdk#223)
   },
   pollIntervalMs: 3000,           // optional: funding detection interval. Default: 3000
 });
@@ -370,7 +371,7 @@ await runExclusive(async () => {
 ## Type Imports
 
 ```tsx
-import { AuthScheme } from "@miden-sdk/react"; // value (enum), not just a type
+import { AuthScheme } from "@miden-sdk/react"; // value (friendly string const { Falcon, ECDSA }), not just a type
 
 import type {
   MidenConfig, QueryResult, MutationResult, TransactionStage,

@@ -105,7 +105,7 @@ Three contract types:
 - `#[note]` — Note script (executes when consumed)
 - `#[tx_script]` — One-off transaction logic
 
-Contracts are tested locally with **MockChain** (no network needed) and deployed via **miden-client**.
+Contracts are tested locally with **MockChain** (no network needed) and deployed via the Miden Rust client (**`0xMiden/rust-sdk`**, formerly `miden-client`; the browser client split into `0xMiden/web-sdk`).
 
 ## Key Design Decisions for App Architects
 
