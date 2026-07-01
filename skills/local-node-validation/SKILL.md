@@ -24,24 +24,24 @@ MockChain simplifies execution in ways that hide real-world failures:
 - [ ] A v0.15 Miden node available locally. The v0.15 node is **not** a single binary -- it is composed of standalone executables (validator, sequencer, ntx-builder, transaction prover). The client's own test infra installs the full set: `miden-validator`, `miden-node`, `miden-ntx-builder`, `miden-remote-prover` (see `scripts/start-test-node.sh` in the `miden-client` repo). Install them from the node source pinned in your client's `Cargo.lock`, or follow the 0xMiden/node v0.15 quickstart for the authoritative install flow.
 - [ ] A working network/integration validation binary exists in your project that you can use as the starting template for the localhost variant
 
-> The local-node launch CLI lives in the 0xMiden/node repo, not in `miden-client`. The commands below are the topology the client's `scripts/start-test-node.sh` drives; confirm exact flags against your installed node's `--help` for the version you run.
+> The local-node launch CLI lives in the 0xMiden/node repo, not in `miden-client`. The commands below are the topology the client's `make start-node` target (`scripts/start-test-node.sh`) drives; confirm exact flags against your installed node's `--help` for the version you run.
 
 ## Step 1: Clean State and Start Local Node
 
 **Every node session must start from clean state.** Stale store files and keystore directories cause conflicts, deserialization errors, and misleading test results. Always wipe before starting. (v0.15 artifacts also do not round-trip across versions, so a fresh store is required after any version change.)
 
-The simplest path is the client's bundled helper script, which installs the node binaries (pinned to your `Cargo.lock`), generates genesis, bootstraps each component, and starts the split topology for you:
+The simplest path is the client's `make start-node` target, which runs the bundled `scripts/start-test-node.sh` helper: it installs the node binaries (pinned to your `Cargo.lock`), generates genesis, bootstraps each component, and starts the split topology for you:
 
 ```bash
 # From a checkout of the miden-client repo pinned to your client version:
-./scripts/start-test-node.sh            # foreground, streams logs; Ctrl+C stops
+make start-node              # foreground, streams logs; Ctrl+C stops
 # or
-./scripts/start-test-node.sh --background   # returns once RPC is ready (used by CI)
+make start-node-background   # returns once RPC is ready (used by CI)
 ```
 
 This brings up the four-component topology and exposes the RPC on `127.0.0.1:57291` (the client default, `MIDEN_NODE_PORT`).
 
-If you run the node binaries directly instead of via the script, the shape is below. Treat it as a reference skeleton, not a copy-paste recipe: it omits details the script handles for you (it does not show generating the genesis config the validator bootstraps from, and it leaves out the shared network-tx auth header that the sequencer and ntx-builder must agree on or the sequencer rejects the ntx-builder's transactions). Verify every subcommand and flag against `--help` for your node version, or just use the script.
+If you run the node binaries directly instead of via `make start-node`, the shape is below. Treat it as a reference skeleton, not a copy-paste recipe: it omits details the script handles for you (it does not show generating the genesis config the validator bootstraps from, and it leaves out the shared network-tx auth header that the sequencer and ntx-builder must agree on or the sequencer rejects the ntx-builder's transactions). Verify every subcommand and flag against `--help` for your node version, or just use `make start-node`.
 
 ```bash
 # 1. Bootstrap each component from a generated genesis block
@@ -146,7 +146,7 @@ cargo run --bin <your-local-validation-binary> --release
 Run the node with verbose logging. The helper script honors `RUST_LOG` and writes a per-component log file per service; if you launch the binaries directly, set it on the process you want to inspect (the sequencer carries the RPC):
 
 ```bash
-RUST_LOG=info ./scripts/start-test-node.sh
+RUST_LOG=info make start-node
 # or, running the sequencer directly:
 RUST_LOG=info miden-node sequencer --rpc.listen 127.0.0.1:57291 --data-directory <data>/node \
   --validator.url http://127.0.0.1:50101 --ntx-builder.url http://127.0.0.1:50301 \
