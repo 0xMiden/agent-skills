@@ -6,9 +6,9 @@ description: Enforce coding conventions for the miden-client Rust codebase (rust
 # Miden Client Rust Patterns
 
 The crate ships under `crates/rust-client`, with `crates/sqlite-store` as the
-native persistence backend and `crates/testing` for test utilities. At v0.15
-the WASM/IndexedDB store and the JS web client are no longer part of this
-workspace — they live in the separate `0xMiden/web-sdk` repository. The MSRV
+native persistence backend and `crates/testing` for test utilities. The
+WASM/IndexedDB store and the JS web client live in the separate
+`0xMiden/web-sdk` repository. The MSRV
 tracks `rust-toolchain.toml` in the upstream `miden-client` repository — copy
 that channel into the consumer's toolchain file rather than hard-coding a
 number that drifts.
@@ -248,7 +248,7 @@ A single `keystore.add_key(&secret, account_id)` call both stores the key
 and associates it with the given account — there is no separate "insert key" +
 "register commitment" step. In this workspace `FilesystemKeyStore` (behind the
 `std` feature) is the only `Keystore` impl re-exported from
-`crates/rust-client/src/keystore`; the WASM keystore now lives in the
+`crates/rust-client/src/keystore`; the WASM keystore lives in the
 `web-sdk` repo.
 
 The `Keystore` bound reaches the client via the builder: the `ClientBuilder`

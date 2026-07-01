@@ -42,11 +42,11 @@ Each returns its own result shape plus `isLoading`, `error`, `refetch`.
 ```tsx
 const { accounts, wallets, faucets, isLoading, error, refetch } = useAccounts();
 // accounts — AccountHeader[] (every tracked account)
-// wallets  — DEPRECATED: mirrors `accounts` (v0.15 removed faucet-vs-wallet from the account id)
-// faucets  — DEPRECATED: always [] in v0.15
+// wallets  — mirrors `accounts` (faucet-vs-wallet is not encoded in the account id)
+// faucets  — always `[]`
 ```
 
-In v0.15 an account's faucet-vs-wallet kind is no longer encoded in the account id, so the split is gone: `wallets` is just `accounts` and `faucets` is always empty. Use `accounts` and detect faucets **per-account** via `account.isFaucet()` (load the full `Account` with `useAccount`).
+An account's faucet-vs-wallet kind is not encoded in the account id, so `wallets` mirrors `accounts` and `faucets` is always empty. Use `accounts` and detect faucets **per-account** via `account.isFaucet()` (load the full `Account` with `useAccount`).
 
 ### useAccount(accountId: string)
 ```tsx

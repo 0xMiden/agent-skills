@@ -67,7 +67,7 @@ A transaction is a **single-account state transition** with 4 phases:
 ### Felt and Word
 - **Felt**: Field element in the Goldilocks prime field (p = 2^64 - 2^32 + 1). The fundamental data unit.
 - **Word**: Array of 4 Felts (32 bytes). Used for cryptographic hashes, storage keys, account IDs.
-- **Felt constructors** (Rust `miden_field::Felt` — the same type used host-side in clients/tests *and* guest-side inside `#[component]`/`#[note]` contract code, which re-exports it): `Felt::new(u64)` is **fallible** in v0.15 — it returns `Result<Felt, FeltFromIntError>` and rejects out-of-range values (delegates to `from_canonical_checked`), so callers must `?`/match it (guest code typically `Felt::new(0).unwrap()`). `Felt::new_unchecked(u64)` is the raw, non-reducing constructor (any `u64`, no validation). Always-succeed constructors (return a bare `Felt`): `Felt::from_u8` / `from_u16` / `from_u32`. Non-panicking but still fallible: `Felt::from_canonical_checked(u64) -> Option<Felt>` (returns `None` when out of range). Note the JS/React SDK's `Felt` is a *different* type whose `Felt.new(u64)` is infallible and whose accessor is `.asInt()`.
+- **Felt constructors** (Rust `miden_field::Felt` — the same type used host-side in clients/tests *and* guest-side inside `#[component]`/`#[note]` contract code, which re-exports it): `Felt::new(u64)` is **fallible** in v0.15 — it returns `Result<Felt, FeltFromIntError>` and rejects out-of-range values (delegates to `from_canonical_checked`), so callers must `?`/match it (guest code typically `Felt::new(0).unwrap()`). `Felt::new_unchecked(u64)` is the raw, non-reducing constructor (any `u64`, no validation). Always-succeed constructors (return a bare `Felt`): `Felt::from_u8` / `from_u16` / `from_u32`. Non-panicking but fallible: `Felt::from_canonical_checked(u64) -> Option<Felt>` (returns `None` when out of range). Note the JS/React SDK's `Felt` is a *different* type whose `Felt.new(u64)` is infallible and whose accessor is `.asInt()`.
 - **Word constructors**: `Word::new`, `Word::from([u32; 4])`, `Word::from([Felt; 4])`, `Word::try_from([u64; 4])`
 - **Current accessors**: `felt.as_canonical_u64()`, `word.as_elements()`, `word.into_elements()`, `word.as_bytes()`, `word.to_hex()`
 
@@ -90,9 +90,9 @@ A transaction is a **single-account state transition** with 4 phases:
 | `NoAuth` | No authentication (for testing) |
 | `AuthSingleSig` | Production signature authentication — unified auth component covering both Falcon-512 and ECDSA-K256 key types |
 
-**Auth note**: `AuthSingleSig` unifies what were previously per-scheme auth components (one for Falcon-512, one for ECDSA-K256) into a single component that dispatches on the key type ([miden-base#2390](https://github.com/0xMiden/miden-base/pull/2390)). In the same release the underlying Falcon-512 signature scheme adopted Poseidon2 as its hash function, and is now named `Falcon512Poseidon2`. If you see the older per-scheme component names or the old signature-scheme name in examples or docs, the source predates the auth-component unification and needs updating.
+**Auth**: `AuthSingleSig` is a single auth component that dispatches on the key type, so one component handles both Falcon-512 and ECDSA-K256 keys. The Falcon-512 scheme uses Poseidon2 as its hash function and is named `Falcon512Poseidon2`.
 
-**v15 note**: `BasicFungibleFaucet` and `NetworkFungibleFaucet` were unified into a single `FungibleFaucet` component, constructed with the `bon`-generated `FungibleFaucet::builder()` (required setters `.name(TokenName::new(..)?)`, `.symbol(TokenSymbol::new(..)?)`, `.decimals(n)`, `.max_supply(AssetAmount)`, then `.build()?`). If you see `BasicFungibleFaucet` or `NetworkFungibleFaucet`, the source predates 0.15 — those symbols no longer exist.
+**Fungible faucet**: `FungibleFaucet` is the fungible-faucet component, constructed with the `bon`-generated `FungibleFaucet::builder()` (required setters `.name(TokenName::new(..)?)`, `.symbol(TokenSymbol::new(..)?)`, `.decimals(n)`, `.max_supply(AssetAmount)`, then `.build()?`).
 
 ## Development Model
 

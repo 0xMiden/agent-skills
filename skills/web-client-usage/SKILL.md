@@ -26,8 +26,8 @@ The SDK exposes a top-level `MidenClient` whose state is split across typed
 | `client.compile` | Compiling MASM into account components, tx scripts, note scripts |
 | `client.keystore` | Inserting / fetching / removing secret keys |
 
-`MidenClient` is the public surface. The underlying WASM-bound class is still
-exported as `WasmWebClient` (alias for the legacy `WebClient`) for low-level
+`MidenClient` is the public surface. The underlying WASM-bound class is
+exported as `WasmWebClient` (an alias for `WebClient`) for low-level
 operations the resource API does not yet wrap — reach for it via the wrapped
 `#inner` only when you must.
 
@@ -177,8 +177,10 @@ StorageMode.Public
 StorageMode.Private
 ```
 
-Use `NoteVisibility` (not the legacy `NoteType` enum) and `AuthScheme.Falcon`
-for the Poseidon2-based Falcon-512 scheme.
+Use `NoteVisibility` strings with the high-level resource APIs — `NoteType` is a
+separate enum exported for the low-level WASM APIs and is easy to confuse with
+`NoteVisibility`, so do not pass it where a `NoteVisibility` is expected. Use
+`AuthScheme.Falcon` for the Poseidon2-based Falcon-512 scheme.
 
 `AccountType` exposes **only** `FungibleFaucet`/`NonFungibleFaucet`. There is no
 `MutableWallet`/`ImmutableWallet`/`MutableContract`/`ImmutableContract` member —
@@ -187,9 +189,8 @@ those evaluate to `undefined`. Wallets and contracts are not chosen via
 `accounts.create()` call that passes `components` (or `type:
 "MutableContract"`/`"ImmutableContract"` as strings). See "Account Creation".
 
-`StorageMode` has only `Public`/`Private`. The `"network"` storage mode was
-removed in the 0.15 migration to miden-client — there is no `StorageMode.Network`
-(it would be `undefined`, which silently resolves to private).
+`StorageMode` has only `Public`/`Private`. There is no `StorageMode.Network`
+(accessing it yields `undefined`, which silently resolves to private).
 
 ## Account Creation
 
@@ -197,7 +198,7 @@ removed in the 0.15 migration to miden-client — there is no `StorageMode.Netwo
 // Wallet — the default when no `type` is given (private, Falcon)
 const wallet = await client.accounts.create();
 
-// Wallet with explicit options — still omit `type` (there is no
+// Wallet with explicit options — omit `type` (there is no
 // AccountType.*Wallet member; passing one would be undefined → default wallet)
 const wallet = await client.accounts.create({
   storage: "private",
@@ -387,7 +388,7 @@ commitments (`Word[]`); there is no `status` field.
 
 For a single asset balance without loading the full vault, prefer
 `client.accounts.getBalance(account, token)` (returns `bigint`). It wraps the
-underlying WASM client's `accountReader(id)` lazy reader, which you can still
+underlying WASM client's `accountReader(id)` lazy reader, which you can
 drop into directly for finer-grained reads.
 
 ## Keystore

@@ -24,7 +24,7 @@ This is the single highest-leverage practice for AI-assisted Miden development.
 
 **Build loop**: After every contract edit, run `cargo miden build --manifest-path contracts/<name>/Cargo.toml --release` (adjust the path to your project's contract layout). If your project has a build hook configured, it may do this automatically. If the build fails:
 1. Read the error message
-2. Translate obvious SDK migration errors first:
+2. Translate obvious SDK/compiler errors first:
    - `.as_u64()` -> `.as_canonical_u64()`
    - `Recipient::compute(...)` -> `note::build_recipient(...)`
    - `Value` -> `StorageValue<T>`
@@ -78,7 +78,7 @@ Clone these repos alongside your project for reference. Claude will explore them
 # Required: protocol layer — standard note types and account components (crate: miden-protocol)
 git clone --branch v0.15.3 https://github.com/0xMiden/protocol.git ../protocol
 
-# Required: client API for deployment and chain interaction (formerly miden-client)
+# Required: client API for deployment and chain interaction
 git clone --branch v0.15.2 https://github.com/0xMiden/rust-sdk.git ../rust-sdk
 
 # Required: the Rust SDK macros + compiler, released as v0.9.0 (moves the stack to VM v0.23 /
@@ -93,7 +93,7 @@ git clone --branch kbg/chore/v15-migration https://github.com/0xMiden/tutorials.
 git -C ../tutorials checkout a255af7959a441d9a027178631c666949b4af086
 ```
 
-**Note**: The compiler is now **released as `v0.9.0`** — this is the release that moves the stack to VM v0.23 / protocol v0.15. Don't conflate the version schemes: the network/protocol is **v0.15**, but the compiler workspace and the `cargo-miden` build tool are **`0.9.0`**, and the guest SDK crates (`miden`, `miden-base-macros`, `miden-base-sys`) are **`0.13.0`** — so contracts depend on `miden = "0.13"` and integration/tooling on `cargo-miden = "0.9"`. The compiler retains `note::build_recipient` as an SDK-friendly alias for `compute_and_store_recipient`, so the API examples below resolve there. Use the pinned refs above — `compiler` `v0.9.0`, `protocol` `v0.15.3`, `rust-sdk` (client) `v0.15.2`, and `tutorials` pinned at commit `a255af7` on its v0.15 migration branch — rather than the default branches, since `tutorials`' default branch has not yet been migrated to v0.15. `--depth 1` is intentionally omitted so you can check out other refs later if needed.
+**Note**: The compiler is **released as `v0.9.0`**. Don't conflate the version schemes: the network/protocol is **v0.15**, but the compiler workspace and the `cargo-miden` build tool are **`0.9.0`**, and the guest SDK crates (`miden`, `miden-base-macros`, `miden-base-sys`) are **`0.13.0`** — so contracts depend on `miden = "0.13"` and integration/tooling on `cargo-miden = "0.9"`. The compiler exposes `note::build_recipient` as an SDK-friendly alias for `compute_and_store_recipient`, so the API examples below resolve there. Use the pinned refs above — `compiler` `v0.9.0`, `protocol` `v0.15.3`, `rust-sdk` (client) `v0.15.2`, and `tutorials` pinned at commit `a255af7` on its v0.15 branch — rather than the default branches, since `tutorials`' default branch does not yet carry the v0.15 examples. `--depth 1` is intentionally omitted so you can check out other refs later if needed.
 
 ### `compiler/` — The Rust-to-MASM Compiler
 
@@ -107,7 +107,7 @@ Contains the SDK that powers `#[component]`, `#[note]`, and `#[tx_script]` macro
 
 ### `protocol/` — Protocol Layer and Standard Library
 
-The protocol repo (`github.com/0xMiden/protocol`, formerly `miden-base`; primary crate `miden-protocol`). Contains the protocol specification, standard components, and standard note types.
+The protocol repo (`github.com/0xMiden/protocol`; primary crate `miden-protocol`). Contains the protocol specification, standard components, and standard note types.
 
 - **`crates/miden-standards/`** — Standard note types (P2ID, P2IDE, SWAP, PSWAP, BURN, MINT) and standard account components (BasicWallet, FungibleFaucet, authentication components). Explore to understand note flow patterns and data layouts.
 - **`crates/miden-protocol/asm/kernels/transaction/`** — The MASM transaction kernel. Every Rust SDK function (e.g., `native_account::add_asset`, `output_note::create`, `faucet::mint`) maps to a procedure defined here. Start with `api.masm` to find the procedure signature and stack contract, then read the implementation in `lib/` (e.g., `lib/output_note.masm`, `lib/account.masm`, `lib/epilogue.masm`). Useful for understanding exactly what happens under the hood -- for example, whether a function touches the vault, what the conservation check compares, or how note assets are tracked.
@@ -120,7 +120,7 @@ The protocol repo (`github.com/0xMiden/protocol`, formerly `miden-base`; primary
 
 ### `rust-sdk/` — Client Library
 
-The client repo (`github.com/0xMiden/rust-sdk`, formerly `miden-client`). Contains the Rust API for deploying contracts and interacting with the Miden network.
+The client repo (`github.com/0xMiden/rust-sdk`). Contains the Rust API for deploying contracts and interacting with the Miden network.
 
 - Rust client for building transactions, syncing state, managing accounts and notes
 - CLI tool source code for reference on client usage patterns

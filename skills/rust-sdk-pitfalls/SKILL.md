@@ -46,36 +46,34 @@ if balance.as_canonical_u64() > threshold.as_canonical_u64() { ... }
 
 ## P3: Direct Call Boundary Passes At Most 16 Stack Felts (4 Words)
 
-**Severity**: Medium — overflow degrades to slower memory transfer; a hard error only fires for FPI imports
+**Severity**: High — exceeding the 16-felt call boundary is a compile error
 
-A direct cross-context / export call passes its parameters on the MASM operand stack, whose addressable window is 16 felts (4 Words, counting the canonical-ABI output pointer when present). This is NOT a universal compile error: for ordinary component functions, when the flattened parameters exceed 16 flat values *or* 16 stack felts, the compiler automatically transfers them through memory (Canonical-ABI input indirection) instead of failing. A 17-felt or 9×`i64` (18-felt) signature compiles fine — it just gets the slower indirect calling convention.
-
-A hard compile error fires only for **direct FPI imports** that lower to more than 16 operand-stack felts after expanding 64-bit values and result pointers.
+A direct cross-context / export / FPI call passes its parameters on the MASM operand stack, whose addressable window is 16 felts (4 Words, counting the canonical-ABI result pointer when present). Passing more than 16 flat felts across that boundary is a **compilation error**: after expanding 64-bit values and any result pointer, the flattened parameters must fit in 16 operand-stack felts. (Indirection for larger payloads via the advice provider is planned but not yet implemented, so today the limit is hard.)
 
 ```rust
-// COMPILES — flattens past 16 felts, so params move through memory (slower, not an error)
+// COMPILE ERROR — flattens past 16 felts
 fn process(a: Word, b: Word, c: Word, d: Word, e: Word) { ... }
 
-// PREFERRED — keep export / component-method footprints small, or pass aggregates by reference
+// OK — keep signatures small, or pass aggregates by reference so each lowers to a pointer
 fn process(a: &Word, b: &Word, c: &Word, d: &Word, e: &Word) { ... }
 ```
 
 ## P4: Storage API Is Typed
 
-**Severity**: Medium — old examples no longer compile
+**Severity**: Medium — the wrong component shape does not compile
 
-The old `Value` / untyped `StorageMap` API is gone. Account storage is now:
+Account storage uses typed slots:
 
 - `StorageValue<T>` for a single typed slot
 - `StorageMap<K, V>` for typed maps
 - `get()` / `set()` methods instead of `.read()` / `.write()`
 - `K: WordKey`, `T: WordValue`, `V: WordValue`
 
-A v0.15 account component is written in **three parts**, and `#[component]` no longer applies to a struct. Annotate the storage struct with `#[component_storage]`, the API `trait` with `#[component]`, and the `impl Trait for Storage` block with `#[component]`:
+An account component is written in **three parts**: annotate the storage struct with `#[component_storage]`, the API `trait` with `#[component]`, and the `impl Trait for Storage` block with `#[component]`:
 
 ```rust
 // 1. Storage struct — annotated #[component_storage], NOT #[component].
-//    Applying #[component] to a struct is now a hard compile error.
+//    Applying #[component] to a struct is a hard compile error.
 #[component_storage]
 struct CounterContractStorage {
     #[storage(description = "single typed slot")]
@@ -146,7 +144,7 @@ use alloc::vec::Vec;
 
 ## P7: Rust SDK `Asset` Is Two Words (Key + Value)
 
-**Severity**: Medium — old `asset.inner[...]` code is stale
+**Severity**: Medium — reconstructing an asset from raw `asset.inner[...]` offsets is wrong
 
 In the Rust SDK (`miden::Asset` / `miden_base_sys::bindings::Asset`), an `Asset` is encoded as two words:
 
@@ -165,15 +163,15 @@ let amount = asset.value[0];
 let asset_key = asset.key;
 ```
 
-Do not assume the old single-word asset layout. Use `asset.key` and `asset.value`, or protocol helpers, instead of reconstructing from old `asset.inner[...]` offsets.
+Use `asset.key` and `asset.value` (or protocol helpers) rather than reconstructing an asset from raw `asset.inner[...]` offsets.
 
-**Clarification (not a v0.15 change)**: This two-word `{key, value}` form is the Rust SDK ABI type, whose own documentation states it matches the protocol/base ABI from before v0.15 — it is the SDK encoding, not a v0.15 protocol redesign. At the protocol layer, `Asset` is an enum `{ Fungible, NonFungible }`, and the vault words are obtained via `to_key_word()` / `to_value_word()`. Reading the fungible amount from `value[0]` is correct on both sides.
+**SDK vs protocol `Asset`**: the two-word `{key, value}` form is the Rust SDK ABI type. At the protocol layer, `Asset` is an enum `{ Fungible, NonFungible }`, and the vault words are obtained via `to_key_word()` / `to_value_word()`. Reading the fungible amount from `value[0]` is correct on both sides.
 
-## P8: `Recipient::compute` Was Removed
+## P8: Build Recipients with `note::build_recipient` (no `Recipient::compute`)
 
-**Severity**: Medium — causes compilation errors after upgrading
+**Severity**: Medium — calling a nonexistent `Recipient::compute` fails to compile
 
-Building recipients now goes through the note binding:
+Build recipients through the note binding:
 
 ```rust
 extern crate alloc;
@@ -186,13 +184,13 @@ let recipient = note::build_recipient(
 );
 ```
 
-`note::build_recipient` is retained in the Rust SDK as a friendly alias; it forwards to the underlying host function (`miden::protocol::note::compute_and_store_recipient`), which computes and stores the recipient in one step. You can call either name.
+`note::build_recipient` is the Rust SDK alias for the host function `miden::protocol::note::compute_and_store_recipient`, which computes and stores the recipient in one step. You can call either name.
 
 ## P9: P2ID Note Root — Prefer `script_root()`, Do Not Hardcode
 
 **Severity**: Low-Medium — breaks after miden-standards updates
 
-Creating P2ID output notes requires the MAST root of the P2ID script. The root changes whenever the P2ID script or the assembler/hashing changes (it changed in the v0.15 release), so a hardcoded literal is both stale and unverifiable.
+Creating P2ID output notes requires the MAST root of the P2ID script. The root changes whenever the P2ID script or the assembler/hashing changes, so a hardcoded literal is fragile and unverifiable.
 
 **Source of truth**: Use `P2idNote::script_root()` from `miden-standards` (returns a `NoteScriptRoot`, a `Word` newtype convertible via `.into()`). Derive the root from the dependency rather than embedding a literal, and re-derive after any dependency bump.
 
@@ -203,10 +201,10 @@ use miden_standards::note::P2idNote;
 let p2id_root: Word = P2idNote::script_root().into();
 ```
 
-**If you must embed a constant** (e.g., inside compiler/contract code that cannot call into miden-standards), regenerate it from the current `miden-standards` version and verify it after every update. The four-limb literal below is an ILLUSTRATIVE pre-v0.15 value only — it will NOT match v0.15 and must not be copied as-is:
+**If you must embed a constant** (e.g., inside compiler/contract code that cannot call into miden-standards), regenerate it from the current `miden-standards` version and verify it after every update. The four-limb literal below is ILLUSTRATIVE only — it will not match your build and must not be copied as-is:
 
 ```rust
-// ILLUSTRATIVE pre-v0.15 value ONLY — does NOT match v0.15. Regenerate from
+// ILLUSTRATIVE ONLY — will not match your build. Regenerate from
 // P2idNote::script_root() for your pinned miden-standards version.
 fn p2id_note_root() -> Word {
     Word::try_from([
@@ -234,7 +232,7 @@ Named enum variants (`NoteType::Private`, `NoteType::Public`) don't exist in con
 | Private (default) | `NoteType::from(felt!(0))` |
 | Public | `NoteType::from(felt!(1))` |
 
-**v0.15 encoding changed**: The note-type encoding is now 1-bit — `Private = 0` (and `Private` is the protocol default) and `Public = 1`. Only these two values exist; there is no `Encrypted` type. Because the SDK wrapper does no validation, an out-of-range value (e.g. `felt!(2)` or `felt!(3)`) is not caught at compile time — it is rejected at execution time by the kernel with `ERR_NOTE_INVALID_TYPE` (the kernel asserts `note_type <= 1`). Emitting the old pre-v0.15 value `felt!(2)` for a private note will panic on a v0.15 node.
+**Note-type encoding**: the note type is 1-bit — `Private = 0` (the protocol default) and `Public = 1`. Only these two values exist; there is no `Encrypted` type. The SDK wrapper does no validation, so an out-of-range value (e.g. `felt!(2)` or `felt!(3)`) is not caught at compile time — the kernel rejects it at execution time with `ERR_NOTE_INVALID_TYPE` (it asserts `note_type <= 1`).
 
 See [miden-bank bank-account](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/bank-account/src/lib.rs) for `NoteType::from(note_type)` usage.
 

@@ -5,9 +5,9 @@ description: Guide to testing Miden smart contracts with MockChain (Miden v0.15)
 
 # Miden Testing Patterns (MockChain)
 
-These patterns target Miden **v0.15** (`miden-protocol`/`miden-standards`/`miden-testing` 0.15.x). Several types were renamed or removed in the migration to v0.15 (see the notes inline).
+These patterns target Miden **v0.15** (`miden-protocol`/`miden-standards`/`miden-testing` 0.15.x).
 
-The **authoritative working v0.15 example** is the `miden-bank` tutorial (`examples/miden-bank/integration/tests/{init_test,deposit_test,withdraw_test}.rs` plus `integration/src/helpers.rs` in [miden-bank](https://github.com/0xMiden/tutorials/tree/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/integration)). Prefer it over the `project-template` counter test: the `project-template` may still be on the pre-v0.15 line, and its `counter_test.rs` uses the removed pre-v0.15 types `AccountStorageMode` and `AccountType::RegularAccountImmutableCode`, the removed `.storage_mode(...)` builder method, a stale storage-slot naming format, and the bare `RandomCoin::new(... .root())` form — none of which compile under v0.15. Verify any copied snippet compiles under v0.15 before relying on it.
+The **authoritative working example** is the `miden-bank` tutorial (`examples/miden-bank/integration/tests/{init_test,deposit_test,withdraw_test}.rs` plus `integration/src/helpers.rs` in [miden-bank](https://github.com/0xMiden/tutorials/tree/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/integration)). The `project-template` counter contract is another working reference. Mirror them for the patterns below.
 
 ## Test File Setup
 
@@ -37,7 +37,7 @@ Start from `let mut builder = MockChain::builder();` (see `deposit_test.rs` in [
 
 For a bare wallet use `builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthSchemeId::Falcon512Poseidon2 })`. For wallets with pre-funded assets, use `builder.add_existing_wallet_with_assets(Auth::BasicAuth { auth_scheme: AuthSchemeId::Falcon512Poseidon2 }, [FungibleAsset::new(faucet.id(), 100)?.into()])` (see `deposit_test.rs`).
 
-> v0.15 auth-scheme naming: `miden_client::auth` re-exports the **same** protocol enum under **two** names — `AuthScheme` (the protocol name) and `AuthSchemeId` (an alias; this is the name the canonical tutorials use). Both compile; the field is `Auth::BasicAuth { auth_scheme }`. The variant `Falcon512Poseidon2` is the same on both. The examples here use `AuthSchemeId::Falcon512Poseidon2` to match the tutorials.
+> Auth-scheme naming: `miden_client::auth` re-exports the **same** protocol enum under **two** names — `AuthScheme` (the protocol name) and `AuthSchemeId` (an alias; this is the name the canonical tutorials use). Both compile; the field is `Auth::BasicAuth { auth_scheme }`. The variant `Falcon512Poseidon2` is the same on both. The examples here use `AuthSchemeId::Falcon512Poseidon2` to match the tutorials.
 
 ### 3. Set Up Faucets (for fungible assets)
 ```rust
@@ -75,7 +75,7 @@ Example: package `bank-account` with `[lib].namespace = "miden:bank-account/bank
 - `bank_account::bank::initialized`
 - `bank_account::bank::balances`
 
-Note the middle segment is `bank` (the interface segment), **not** `bank_storage` (the struct) and **not** `bank_account`, and there is no `miden_` org prefix. The `miden_counter_account::counter_contract::count_map` style seen in older `project-template` revisions is the **stale pre-v0.15** format (those revisions have no `miden-project.toml` and pin a pre-v0.15 `miden-client`); do not copy it for v0.15.
+Note the middle segment is `bank` (the interface segment), **not** `bank_storage` (the struct) and **not** `bank_account`, and there is no `miden_` org prefix.
 
 The component's storage is declared with the v0.15 three-part component macro (`#[component_storage]` struct + `#[component]` trait + `#[component]` impl); the storage struct, not the trait, carries the `#[storage]` fields the slot names derive from. See the `rust-sdk-patterns` skill for the contract side.
 
@@ -106,12 +106,12 @@ let bank_account = create_testing_account_from_package(
 builder.add_account(bank_account.clone())?;
 ```
 
-> v0.15 storage-seeding footgun: `InitStorageData::insert_value(name, value)` takes `value: impl Into<WordValue>`. The numeric `From` impls (`u8`/`u16`/`u32`/`u64`) produce a `WordValue::Atomic(string)` that the slot's schema parses — **not** a felt-positioned `Word`. Only `From<Felt>` yields `[felt, 0, 0, 0]` and `From<Word>`/`From<[Felt; 4]>`/`From<[u32; 4]>` are fully-typed words. For a `StorageValue<Word>` slot (like the bank's `initialized` flag, whose contract reads index `[0]`), seed a `Word` (`Word::default()` for zero). The `insert_value` doc comment claiming `u64` becomes `[0,0,0,felt]` is stale; the code produces an atomic string.
+> Storage-seeding footgun: `InitStorageData::insert_value(name, value)` takes `value: impl Into<WordValue>`. The numeric `From` impls (`u8`/`u16`/`u32`/`u64`) produce a `WordValue::Atomic(string)` that the slot's schema parses — **not** a felt-positioned `Word`. Only `From<Felt>` yields `[felt, 0, 0, 0]` and `From<Word>`/`From<[Felt; 4]>`/`From<[u32; 4]>` are fully-typed words. For a `StorageValue<Word>` slot (like the bank's `initialized` flag, whose contract reads index `[0]`), seed a `Word` (`Word::default()` for zero). The `insert_value` doc comment claiming `u64` becomes `[0,0,0,felt]` is inaccurate; the code produces an atomic string.
 
-> v0.15 account changes:
-> - The old `AccountType` (`FungibleFaucet`/`NonFungibleFaucet`/`RegularAccountImmutableCode`/`RegularAccountUpdatableCode`) is **gone**. `AccountType` is now the visibility enum `{ Private, Public }`. Use `.account_type(AccountType::Public)` (or `::Private`).
-> - `AccountStorageMode` was removed and `AccountBuilder` no longer has a `.storage_mode(...)` method. Visibility is set entirely via `.account_type(...)`.
-> - Faucet-ness is no longer an account kind; it is determined by the installed components.
+> Account model:
+> - `AccountType` is the visibility enum `{ Private, Public }`.
+> - Set account visibility via `.account_type(AccountType::Public | ::Private)`.
+> - Faucet-ness is determined by the installed components.
 
 If you build the account inline instead of via the helper, `builder.add_account_from_builder(auth, account_builder, AccountState::Exists)` is the v0.15-valid equivalent — it consumes an `AccountBuilder` (configured with `.account_type(AccountType::Public)` and `.with_component(...)`) and registers it. For map slots, seed entries with `init_storage_data.insert_map_entry(slot_name, key, value)?` (three args: `slot_name: impl TryInto<StorageSlotName>`, `key`, `value`).
 
@@ -133,9 +133,9 @@ let note = NoteBuilder::new(sender.id(), &mut note_rng)
     .build()?;
 ```
 
-> v0.15: `NoteScript::root()` returns the `NoteScriptRoot` newtype, not a `Word`. `RandomCoin::new` needs a `Word`, so convert the root explicitly with `Word::from(...root())` (equivalently `...root().into()` or `...root().as_word()`). The bare `RandomCoin::new(... .root())` form no longer type-checks under v0.15.
+> `NoteScript::root()` returns a `NoteScriptRoot` newtype. `RandomCoin::new` needs a `Word`, so convert the root explicitly with `Word::from(...root())` (equivalently `...root().into()` or `...root().as_word()`).
 
-> v0.15: `Felt::new(u64)` is now **fallible** — it returns `Result<Felt, FeltFromIntError>` instead of an infallible value. `note_storage` takes `impl IntoIterator<Item = Felt>` and itself returns `Result`, so a bare `[Felt::new(42), Felt::new(0)]` is `[Result<Felt, _>; 2]` and will not type-check. Prefer the infallible `Felt::from(42_u32)` for in-range literals (`From<u8>/From<u16>/From<u32>` are infallible); for a `u64` use `Felt::new(n)?` or `Felt::new_unchecked(n)` (the form the bank withdraw test uses for note-storage inputs).
+> `Felt::new(u64)` is **fallible** — it returns `Result<Felt, FeltFromIntError>`. `note_storage` takes `impl IntoIterator<Item = Felt>`, so build each felt with the infallible `Felt::from(42_u32)` for in-range literals (`From<u8>/From<u16>/From<u32>` are infallible); for a `u64` use `Felt::new(n)?` or `Felt::new_unchecked(n)` (the form the bank withdraw test uses for note-storage inputs).
 
 ### 7. Add to MockChain and Build
 
@@ -176,7 +176,7 @@ let updated_account = mock_chain.committed_account(account.id())?;
 
 The helper essentially does `TransactionScript::from_parts(package.mast.mast_forest().clone(), entrypoint)` after finding the entry procedure's root in the MAST forest.
 
-> v0.15: reserve `TransactionScript::from_package(&package)?` (and the `#[doc(hidden)]` `unwrap_program()`) for packages that are genuinely `Executable`. For `kind = "tx-script"` compiler packages (e.g. the bank's `init-tx-script`, whose `miden-project.toml` declares `kind = "tx-script"`), use `from_parts` / the `build_tx_script_from_package` helper as above — `from_package` returns an error and `unwrap_program()` panics on them.
+> Reserve `TransactionScript::from_package(&package)?` (and the `#[doc(hidden)]` `unwrap_program()`) for packages that are genuinely `Executable`. For `kind = "tx-script"` compiler packages (e.g. the bank's `init-tx-script`, whose `miden-project.toml` declares `kind = "tx-script"`), use `from_parts` / the `build_tx_script_from_package` helper as above — `from_package` returns an error and `unwrap_program()` panics on them.
 
 ### 10. Verify Storage State
 
@@ -192,8 +192,8 @@ use miden_client::{
     transaction::RawOutputNote,
 };
 
-// v0.15: Note::new takes a PartialNoteMetadata (sender + note_type + tag),
-// not the old NoteMetadata. Build it with PartialNoteMetadata::new(sender, note_type),
+// Note::new takes a PartialNoteMetadata (sender + note_type + tag).
+// Build it with PartialNoteMetadata::new(sender, note_type),
 // then optionally `.with_tag(tag)` (the tag defaults to NoteTag::default()).
 let partial_metadata = PartialNoteMetadata::new(sender, NoteType::Public).with_tag(tag);
 let expected_note = Note::new(expected_assets, partial_metadata, expected_recipient);
@@ -207,8 +207,8 @@ let tx_context = mock_chain
 let executed = tx_context.execute().await?;
 ```
 
-> v0.15 note metadata split:
-> - `Note::new(assets, partial_metadata, recipient)` now takes a `PartialNoteMetadata` (sender/type/tag only). The old `NoteMetadata` is no longer accepted here — there is no `Into` on the parameter.
+> Note metadata:
+> - `Note::new(assets, partial_metadata, recipient)` takes a `PartialNoteMetadata` (sender/type/tag only); there is no `Into` conversion on the parameter.
 > - For attachment-bearing notes use `Note::with_attachments(assets, partial_metadata, recipient, attachments)` (attachments are `NoteAttachments`).
 
 ## Multi-Transaction Test Pattern
@@ -242,14 +242,14 @@ The faucet must be set up first (see Step 3) and the sender wallet must hold suf
 
 ## Key Dependencies
 
-See `integration/Cargo.toml` in [miden-bank](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/integration/Cargo.toml) for the dependency versions. Under the released compiler v0.9.0 the integration crate depends on `cargo-miden = "0.9"` (its `build_project_in_dir` helper calls `cargo_miden::run`) alongside the 0.15 line (`miden-client`/`miden-standards`/`miden-testing` 0.15.x, `miden-mast-package` 0.23.x) — no git-rev/branch pins. The contracts it builds depend on the guest SDK `miden = "0.13"`. pre-v0.15 artifacts and serialized `.masl`/`.masp` blobs do not round-trip into v0.15; re-assemble from source.
+See `integration/Cargo.toml` in [miden-bank](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/integration/Cargo.toml) for the dependency versions. Under the released compiler v0.9.0 the integration crate depends on `cargo-miden = "0.9"` (its `build_project_in_dir` helper calls `cargo_miden::run`) alongside the 0.15 line (`miden-client`/`miden-standards`/`miden-testing` 0.15.x, `miden-mast-package` 0.23.x) — no git-rev/branch pins. The contracts it builds depend on the guest SDK `miden = "0.13"`.
 
 ## Validation Checklist
 
 - [ ] Test function is `async` and uses `#[tokio::test]`
 - [ ] Auth uses `AuthSchemeId::Falcon512Poseidon2` (or the equivalent `AuthScheme::Falcon512Poseidon2` — both name the same protocol enum)
 - [ ] `AccountBuilder` uses `.account_type(AccountType::Public | ::Private)` and no `.storage_mode(...)` / no `AccountStorageMode`
-- [ ] Storage slot names follow `<package_name>::<interface_segment>::<field_name>` (bare package name, `[lib].namespace` interface segment, e.g. `bank_account::bank::balances`) — not the stale pre-v0.15 `miden_..._account::struct::field` format
+- [ ] Storage slot names follow `<package_name>::<interface_segment>::<field_name>` (bare package name, `[lib].namespace` interface segment, e.g. `bank_account::bank::balances`)
 - [ ] Value slots without a schema default are seeded via `InitStorageData::insert_value(StorageValueName::from_slot_name(&slot), ..)`; `StorageValue<Word>` slots get a `Word` (e.g. `Word::default()`), not a bare integer (numeric `Into<WordValue>` yields an atomic string, not a felt-positioned word)
 - [ ] All contracts built before account/note creation
 - [ ] `NoteScript::root()` converted with `Word::from(...)` before seeding `RandomCoin`

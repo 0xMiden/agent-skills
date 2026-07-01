@@ -10,7 +10,7 @@ description: Complete guide to writing Miden smart contracts with the Rust SDK. 
 ### Account Component (three-part pattern)
 Defines reusable logic and storage for accounts. Accounts are composed of one or more components.
 
-In v0.15 an account component is written as **three parts** (`#[component]` no longer applies to a struct — the compiler rejects it with "`#[component]` no longer applies to structs; annotate the storage struct with `#[component_storage]` instead"):
+An account component is written as **three parts** — the storage struct is annotated `#[component_storage]`, and `#[component]` applies to the API trait and the impl block:
 
 1. `#[component_storage]` on the **storage struct** — declares typed `#[storage(...)]` fields and derives slot names.
 2. `#[component]` on a **trait** — the component's exported API (this is the source of the generated WIT interface).
