@@ -44,39 +44,61 @@ if balance.as_canonical_u64() > threshold.as_canonical_u64() { ... }
 
 **Rule**: For quantity/business logic, ALWAYS convert to `.as_canonical_u64()` before using comparison operators.
 
-## P3: Function Argument Limit (4 Words / 16 Felts)
+## P3: Direct Call Boundary Passes At Most 16 Stack Felts (4 Words)
 
-**Severity**: Medium — causes compilation errors
+**Severity**: High — exceeding the 16-felt call boundary is a compile error
 
-Functions can receive at most 4 Words (16 Felts) as arguments.
+A direct cross-context / export / FPI call passes its parameters on the MASM operand stack, whose addressable window is 16 felts (4 Words, counting the canonical-ABI result pointer when present). Passing more than 16 flat felts across that boundary is a **compilation error**: after expanding 64-bit values and any result pointer, the flattened parameters must fit in 16 operand-stack felts. (Indirection for larger payloads via the advice provider is planned but not yet implemented, so today the limit is hard.)
 
 ```rust
-// PROBLEM — too many arguments
-fn process(a: Word, b: Word, c: Word, d: Word, e: Word) { ... } // > 4 Words!
+// COMPILE ERROR — flattens past 16 felts
+fn process(a: Word, b: Word, c: Word, d: Word, e: Word) { ... }
 
-// SOLUTION — pass fat types by reference
+// OK — keep signatures small, or pass aggregates by reference so each lowers to a pointer
 fn process(a: &Word, b: &Word, c: &Word, d: &Word, e: &Word) { ... }
 ```
 
 ## P4: Storage API Is Typed
 
-**Severity**: Medium — old examples no longer compile
+**Severity**: Medium — the wrong component shape does not compile
 
-The old `Value` / untyped `StorageMap` API is gone. Account storage is now:
+Account storage uses typed slots:
 
 - `StorageValue<T>` for a single typed slot
 - `StorageMap<K, V>` for typed maps
 - `get()` / `set()` methods instead of `.read()` / `.write()`
 - `K: WordKey`, `T: WordValue`, `V: WordValue`
 
+An account component is written in **three parts**: annotate the storage struct with `#[component_storage]`, the API `trait` with `#[component]`, and the `impl Trait for Storage` block with `#[component]`:
+
 ```rust
-#[component]
-struct CounterContract {
+// 1. Storage struct — annotated #[component_storage], NOT #[component].
+//    Applying #[component] to a struct is a hard compile error.
+#[component_storage]
+struct CounterContractStorage {
     #[storage(description = "single typed slot")]
     counter: StorageValue<Felt>,
 
     #[storage(description = "typed map")]
-    balances: StorageMap<AccountId, Felt>,
+    balances: StorageMap<Word, Felt>,
+}
+
+// 2. API trait — defines the exported interface.
+#[component]
+trait CounterContract {
+    fn get_count(&self) -> Felt;
+    fn increment_count(&mut self) -> Felt;
+}
+
+// 3. Implementation — the behavior, wired to the storage struct.
+#[component]
+impl CounterContract for CounterContractStorage {
+    fn get_count(&self) -> Felt { self.counter.get() }
+    fn increment_count(&mut self) -> Felt {
+        let next = self.counter.get() + felt!(1);
+        self.counter.set(next);
+        next
+    }
 }
 ```
 
@@ -88,15 +110,23 @@ If you need custom keys or values, implement `WordKey` / `WordValue` by converti
 
 Storage slot names follow a strict pattern. Getting it wrong often returns the default value silently.
 
-**Pattern**: `[component_package_or_name]::[snake_case(component_struct)]::[field_name]`
+**Pattern**: `[package_name]::[namespace_interface_segment]::[field_name]`
 
-**Conversion rule**: Replace characters outside `[A-Za-z0-9_]` with `_` in the package or component name. The package comes from `[package.metadata.component] package = "..."`, with any `@version` suffix ignored.
+**Where the segments come from**: The `#[component_storage]` macro (NOT `#[component]`) processes the `#[storage]` fields and derives slot names. It loads `miden-project.toml` (next to your `Cargo.toml`, NOT `Cargo.toml` itself):
 
-| Package in your `Cargo.toml` | Component Struct | Field | Storage Slot Name |
-|----------------------|------------------|-------|-------------------|
-| `miden:counter-account` | `CounterContract` | `count_map` | `miden_counter_account::counter_contract::count_map` |
-| `miden:bank-account` | `BankAccount` | `balances` | `miden_bank_account::bank_account::balances` |
-| `miden:bank-account` | `BankAccount` | `initialized` | `miden_bank_account::bank_account::initialized` |
+- **First segment** = `[package] name`.
+- **Middle segment** = the *interface segment* of the `[lib] namespace` value. The namespace is a fully-qualified component id `namespace:package/interface@version`; the interface segment sits between the last `/` and the `@`. This is deliberately decoupled from the Rust storage-struct name, so renaming the private struct cannot change deployed slot names. The struct name (`BankStorage`, `CounterContractStorage`, …) does NOT appear in the slot name.
+- **Last segment** = the `#[storage]` field name.
+
+**Conversion rule**: Each segment is sanitized — any `@version` suffix is stripped, the interface segment is passed through `snake_case`, and characters outside `[A-Za-z0-9_]` are replaced with `_` (an empty or leading-`_` segment is prefixed with `x`). Project package names are conventionally kebab-case (e.g. `counter-contract`, `bank-account`), so the first segment is that name with hyphens replaced by `_` — it does NOT equal the package name verbatim (`counter-contract` → `counter_contract`).
+
+| `[package] name` | `[lib] namespace` | Field | Storage Slot Name |
+|------------------|-------------------|-------|-------------------|
+| `counter-contract` | `miden:counter-contract/miden-counter-contract@0.1.0` | `count_map` | `counter_contract::miden_counter_contract::count_map` |
+| `bank-account` | `miden:bank-account/bank@0.1.0` | `balances` | `bank_account::bank::balances` |
+| `bank-account` | `miden:bank-account/bank@0.1.0` | `initialized` | `bank_account::bank::initialized` |
+
+**Caveat (toolchain-version dependent)**: This naming is a property of the Rust SDK contract macros, which live in the `miden-base-macros` crate (0.13.0, part of the released-compiler-v0.9.0 Rust SDK family alongside `miden` and `miden-base-sys`, all 0.13.0; the separate compiler / `cargo-miden` workspace is versioned 0.9.0). Never conflate these with the protocol/network version (v0.15). The slot-naming algorithm — `package_name::snake_case(interface_segment)::field`, with non-`[A-Za-z0-9_]` mapped to `_` and `@version` stripped — has been stable, but verify against your installed toolchain rather than assuming a protocol version.
 
 ## P6: No-std Environment
 
@@ -112,11 +142,11 @@ extern crate alloc;
 use alloc::vec::Vec;
 ```
 
-## P7: Asset ABI Is Two Words, Not One
+## P7: Rust SDK `Asset` Is Two Words (Key + Value)
 
-**Severity**: Medium — old `asset.inner[...]` code is stale
+**Severity**: Medium — reconstructing an asset from raw `asset.inner[...]` offsets is wrong
 
-`Asset` is now:
+In the Rust SDK (`miden::Asset` / `miden_base_sys::bindings::Asset`), an `Asset` is encoded as two words:
 
 ```rust
 pub struct Asset {
@@ -133,13 +163,15 @@ let amount = asset.value[0];
 let asset_key = asset.key;
 ```
 
-Do not assume the old single-word asset layout. Use `asset.key` and `asset.value`, or protocol helpers, instead of reconstructing from old `asset.inner[...]` offsets.
+Use `asset.key` and `asset.value` (or protocol helpers) rather than reconstructing an asset from raw `asset.inner[...]` offsets.
 
-## P8: `Recipient::compute` Was Removed
+**SDK vs protocol `Asset`**: the two-word `{key, value}` form is the Rust SDK ABI type. At the protocol layer, `Asset` is an enum `{ Fungible, NonFungible }`, and the vault words are obtained via `to_key_word()` / `to_value_word()`. Reading the fungible amount from `value[0]` is correct on both sides.
 
-**Severity**: Medium — causes compilation errors after upgrading
+## P8: Build Recipients with `note::build_recipient` (no `Recipient::compute`)
 
-Building recipients now goes through the note binding:
+**Severity**: Medium — calling a nonexistent `Recipient::compute` fails to compile
+
+Build recipients through the note binding:
 
 ```rust
 extern crate alloc;
@@ -152,47 +184,57 @@ let recipient = note::build_recipient(
 );
 ```
 
-## P9: P2ID Note Root Hardcoding
+`note::build_recipient` is the Rust SDK alias for the host function `miden::protocol::note::compute_and_store_recipient`, which computes and stores the recipient in one step. You can call either name.
+
+## P9: P2ID Note Root — Prefer `script_root()`, Do Not Hardcode
 
 **Severity**: Low-Medium — breaks after miden-standards updates
 
-Creating P2ID output notes requires the MAST root digest of the P2ID script. This is typically hardcoded as a constant.
+Creating P2ID output notes requires the MAST root of the P2ID script. The root changes whenever the P2ID script or the assembler/hashing changes, so a hardcoded literal is fragile and unverifiable.
 
-For any note that is being created within the compiler code, the MAST root digest is needed. Below you find the example of a P2ID note
+**Source of truth**: Use `P2idNote::script_root()` from `miden-standards` (returns a `NoteScriptRoot`, a `Word` newtype convertible via `.into()`). Derive the root from the dependency rather than embedding a literal, and re-derive after any dependency bump.
 
 ```rust
-fn p2id_note_root() -> Digest {
-    Digest::from_word(
-        Word::try_from([
-            13362761878458161062_u64,
-            15090726097241769395_u64,
-            444910447169617901_u64,
-            3558201871398422326_u64,
-        ])
-        .unwrap(),
-    )
+use miden_standards::note::P2idNote;
+
+// script_root() returns a NoteScriptRoot (a Word newtype); convert to Word when needed.
+let p2id_root: Word = P2idNote::script_root().into();
+```
+
+**If you must embed a constant** (e.g., inside compiler/contract code that cannot call into miden-standards), regenerate it from the current `miden-standards` version and verify it after every update. The four-limb literal below is ILLUSTRATIVE only — it will not match your build and must not be copied as-is:
+
+```rust
+// ILLUSTRATIVE ONLY — will not match your build. Regenerate from
+// P2idNote::script_root() for your pinned miden-standards version.
+fn p2id_note_root() -> Word {
+    Word::try_from([
+        13362761878458161062_u64,
+        15090726097241769395_u64,
+        444910447169617901_u64,
+        3558201871398422326_u64,
+    ])
+    .unwrap()
 }
 ```
 
-**Risk**: If miden-standards updates the P2ID script, this digest becomes invalid and withdrawals silently fail.
+**Risk**: If miden-standards updates the P2ID script, any hardcoded digest becomes invalid and withdrawals silently fail.
 
-**Mitigation**: Use `P2idNote::script_root()` from miden-standards if available, or verify the hardcoded root matches the current version after dependency updates.
-
-**NoteType for P2ID**: P2ID output notes created in contract code should use the private note type value via `NoteType::from(felt!(2))` (see P10). Using the public note type triggers an opaque "missing details in advice provider" error at execution time. See [miden-bank withdraw](https://github.com/0xMiden/tutorials/blob/main/examples/miden-bank/contracts/bank-account/src/lib.rs) for the working pattern.
+**NoteType for P2ID**: P2ID output notes created in contract code are constructed with `NoteType::from(felt!(...))` — `felt!(0)` for private, `felt!(1)` for public (see P10). In v0.15 the kernel rejects any note type other than `0` (private) or `1` (public) with `ERR_NOTE_INVALID_TYPE`. See [miden-bank withdraw](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/bank-account/src/lib.rs) for the working pattern (the note type is read from the withdraw-request note's storage and forwarded through `NoteType::from(note_type)`).
 
 ## P10: NoteType Variants Unavailable in Compiler SDK
 
-**Severity**: Medium -- causes compilation errors
+**Severity**: Critical -- wrong values panic at runtime, named variants cause compilation errors
 
-Named enum variants (`NoteType::Private`, `NoteType::Public`, `NoteType::Encrypted`) don't exist in contract code. Construct via `NoteType::from()`:
+Named enum variants (`NoteType::Private`, `NoteType::Public`) don't exist in contract code — the SDK `NoteType` is an unvalidated transparent `Felt` wrapper. Construct via `NoteType::from()`:
 
 | NoteType | Value |
 |----------|-------|
+| Private (default) | `NoteType::from(felt!(0))` |
 | Public | `NoteType::from(felt!(1))` |
-| Private | `NoteType::from(felt!(2))` |
-| Encrypted | `NoteType::from(felt!(3))` |
 
-See [miden-bank bank-account](https://github.com/0xMiden/tutorials/blob/main/examples/miden-bank/contracts/bank-account/src/lib.rs) for `NoteType::from(note_type)` usage.
+**Note-type encoding**: the note type is 1-bit — `Private = 0` (the protocol default) and `Public = 1`. Only these two values exist; there is no `Encrypted` type. The SDK wrapper does no validation, so an out-of-range value (e.g. `felt!(2)` or `felt!(3)`) is not caught at compile time — the kernel rejects it at execution time with `ERR_NOTE_INVALID_TYPE` (it asserts `note_type <= 1`).
+
+See [miden-bank bank-account](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/bank-account/src/lib.rs) for `NoteType::from(note_type)` usage.
 
 ## P11: Note Scripts Cannot Call Native Account Functions
 
@@ -200,7 +242,7 @@ See [miden-bank bank-account](https://github.com/0xMiden/tutorials/blob/main/exa
 
 Note scripts cannot call `native_account::add_asset()` or other `native_account::` functions directly. The kernel's `authenticate_account_origin` check rejects these calls from a note context. Instead, note scripts must call an account component method, which then calls `native_account::add_asset()` internally.
 
-See [miden-bank deposit-note](https://github.com/0xMiden/tutorials/blob/main/examples/miden-bank/contracts/deposit-note/src/lib.rs) for the correct pattern: the note script calls `bank_account::deposit()`, which internally calls `native_account::add_asset()`.
+See [miden-bank deposit-note](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/deposit-note/src/lib.rs) for the correct pattern: the note script declares the consuming account via `#[account(bank_account::Bank)] pub struct Wallet;` and, inside `#[note_script] fn run(self, _arg: Word, account: &mut Wallet)`, calls `account.deposit(depositor, asset)` on that wrapper. The `deposit()` component method then calls `native_account::add_asset()` internally. It is NOT a free `bank_account::deposit()` call.
 
 ## P12: Note Inputs Are Immutable After Creation
 

@@ -1,6 +1,6 @@
 ---
 name: frontend-source-guide
-description: Guide for advanced Miden frontend development using source repo exploration. Covers AI development practices (Plan Mode, verification-driven development, context engineering, sub-agents) and maps the miden-client source repository for discovering advanced patterns. Use when building complex applications beyond basic hook usage, implementing custom signers, working with WasmWebClient directly, or troubleshooting SDK internals.
+description: Guide for advanced Miden frontend development using source repo exploration. Covers AI development practices (Plan Mode, verification-driven development, context engineering, sub-agents) and maps the Miden web-sdk source repository for discovering advanced patterns. Use when building complex applications beyond basic hook usage, implementing custom signers, working with WasmWebClient directly, or troubleshooting SDK internals.
 ---
 
 # Advanced Miden Frontend Development: Source-Guided Context Engineering
@@ -37,7 +37,7 @@ Never submit code that doesn't type-check. The verification loop is your quality
 
 ### 3. Context Engineering with Source Repos
 
-The basic skills (react-sdk-patterns, frontend-pitfalls, vite-wasm-setup) cover standard patterns. For anything beyond those patterns, the miden-client source repository is the knowledge base.
+The basic skills (react-sdk-patterns, frontend-pitfalls, vite-wasm-setup) cover standard patterns. For anything beyond those patterns, the web-sdk source repository is the knowledge base.
 
 **How to use source repos effectively**:
 - Don't load entire repos into context. Use sub-agents to explore — they search, read relevant files, and summarize findings without filling the main conversation context.
@@ -70,21 +70,21 @@ When stuck at any stage: search the React SDK source for a similar working patte
 Clone this repo alongside your project for reference. Claude will explore it when needed for advanced patterns.
 
 ```bash
-# Contains React SDK source, WasmWebClient WASM bindings, and working examples
-git clone --depth 1 https://github.com/0xMiden/miden-client.git ../miden-client
+# Contains the React SDK source (@miden-sdk/react), the WasmWebClient WASM bindings, and working examples
+git clone --depth 1 https://github.com/0xMiden/web-sdk.git ../web-sdk
 ```
 
-### `packages/react-sdk/` — React SDK Source
+### `packages/react-sdk/` — React SDK Source (`@miden-sdk/react`)
 
 The primary reference for all frontend development.
 
-- **`src/hooks/`** — All 18+ hook implementations. Each file is self-contained. Read these to understand exact parameters, error handling, and stage progression.
-- **`src/context/MidenProvider.tsx`** — Client initialization, sync loop, signer detection, runExclusive lock. Read this to understand initialization order.
+- **`src/hooks/`** — All ~29 hook implementations. Each file is self-contained. Read these to understand exact parameters, error handling, and stage progression.
+- **`src/context/MidenProvider.tsx`** — Client initialization, sync loop, signer detection, runExclusive lock. Read this to understand initialization order. Note: `useMidenClient()` returns the `WasmWebClient` (aliased `WebClient`).
 - **`src/context/SignerContext.ts`** — External signer interface. Read this when implementing custom signers.
 - **`src/store/MidenStore.ts`** — Zustand store structure. Read this to understand cached state and what triggers re-renders.
-- **`src/utils/`** — Utility implementations (amounts, notes, bech32, runExclusive, accountParsing).
+- **`src/utils/`** — Utility implementations (amounts, notes, accountBech32, runExclusive, accountParsing).
 - **`src/types/index.ts`** — All TypeScript interfaces. The single source of truth for option types, result types, and configuration.
-- **`examples/wallet/`** — Complete working wallet app. The most reliable reference for how to set up MidenProvider, create accounts, display balances, claim notes, and send tokens.
+- **`packages/react-sdk/examples/wallet/`** — Complete working wallet app. The most reliable reference for how to set up MidenProvider, create accounts, display balances, claim notes, and send tokens.
 
 **Explore when**: Writing any new component, understanding exact hook behavior, finding how a specific feature works, debugging unexpected behavior.
 
@@ -92,7 +92,8 @@ The primary reference for all frontend development.
 
 The Rust-to-WASM bridge that the React SDK wraps.
 
-- Contains the `WasmWebClient` struct and all methods available via `useMidenClient()`
+- Contains the `WebClient` WASM struct, exported to JS as the `WasmWebClient` class (which react-sdk re-aliases to `WebClient`, the value returned by `useMidenClient()`) and all methods it exposes to JS
+- The standalone `RpcClient` struct (e.g. `getBlockHeaderByNumber`, `getNotesById`) lives here too, in `src/rpc_client/`, and is exported separately from `@miden-sdk/miden-sdk` — it is NOT reachable through `useMidenClient()`
 - JavaScript bindings in `js/` directory
 
 **Explore when**: A hook doesn't exist for your operation, understanding what WasmWebClient methods are available, debugging WASM-level errors.
@@ -109,11 +110,12 @@ The browser storage layer for accounts, keys, notes, and transaction history.
 
 | Building This | Explore These Paths | What to Look For |
 |---|---|---|
-| Basic wallet UI | `examples/wallet/` | MidenProvider setup, useAccounts, useSend |
+| Basic wallet UI | `packages/react-sdk/examples/wallet/` | MidenProvider setup, useAccounts, useSend |
 | Custom transaction | `src/hooks/useTransaction.ts` | Request factory pattern, client methods |
 | External signer | `src/context/SignerContext.ts` | SignerContextValue interface, signCb |
 | Note consumption flow | `src/hooks/useConsume.ts` | NoteId parsing, filter construction |
 | Swap UI | `src/hooks/useSwap.ts` | Swap options, dual note types |
+| Partial swap (PSWAP) UI | `src/hooks/usePswapCreate.ts`, `usePswapConsume.ts`, `usePswapCancel.ts` | Partial-fill swap flow (new in v0.15): create, consume, cancel |
 | Token display | `src/utils/amounts.ts` | formatAssetAmount, parseAssetAmount |
 | Account ID formatting | `src/utils/accountBech32.ts` | toBech32AccountId |
 | State management | `src/store/MidenStore.ts` | Zustand selectors, cached state |
@@ -125,22 +127,31 @@ The browser storage layer for accounts, keys, notes, and transaction history.
 ## Common Advanced Patterns
 
 ### Custom Hooks Wrapping WasmWebClient
-For operations not covered by built-in hooks, create custom hooks that use useMidenClient() and runExclusive:
+For operations not covered by built-in hooks, create custom hooks that use `useMidenClient()` and `runExclusive`. `useMidenClient()` returns the `WebClient` (WasmWebClient), so only call methods that exist on it — e.g. `getSyncHeight()`:
 ```tsx
-function useBlockHeader(blockNumber: number) {
+function useSyncHeight() {
   const client = useMidenClient();
   const { runExclusive } = useMiden();
-  const [data, setData] = useState(null);
+  const [height, setHeight] = useState<number | null>(null);
   useEffect(() => {
     // Note: runExclusive() may be simplified in a future SDK version.
     // Check SDK changelog when upgrading.
     runExclusive(async () => {
-      const header = await client.getBlockHeaderByNumber(blockNumber);
-      setData(header);
+      const h = await client.getSyncHeight();
+      setHeight(h);
     });
-  }, [blockNumber]);
-  return data;
+  }, []);
+  return height;
 }
+```
+
+Some operations are NOT on the `WebClient` returned by `useMidenClient()` — for example block headers. `getBlockHeaderByNumber` lives on the standalone `RpcClient` (exported from `@miden-sdk/miden-sdk`), which you construct directly with an endpoint:
+```tsx
+import { RpcClient, Endpoint } from "@miden-sdk/miden-sdk";
+
+// signature: getBlockHeaderByNumber(blockNum?: number, includeMmrProof?: boolean)
+const rpc = new RpcClient(endpoint);              // endpoint: Endpoint
+const header = await rpc.getBlockHeaderByNumber(blockNumber, false);
 ```
 
 ### Multi-Step Workflows

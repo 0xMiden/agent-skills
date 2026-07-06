@@ -43,7 +43,7 @@ it("shows empty state", () => {
 ### Default mock return values
 
 **Query hooks** return populated data by default:
-- `useAccounts()` — 2 wallets, 1 faucet
+- `useAccounts()` — default mock returns `accounts` (3 headers), `wallets` (2 wallet headers), and `faucets` (1 faucet header). The template mock intentionally keeps the `wallets`/`faucets` split populated so the query-hook pattern can exercise both lists. NOTE: the real v0.15 hook deprecates these fields — it returns `wallets: accounts` and `faucets: []` (protocol 0.15 removed faucet-vs-wallet from the account id, so accounts can't be split from headers alone); detect faucet-ness per-account from its components, not from a `faucets` array. The override example above (`wallets: [], faucets: []`) is a valid manual override but is NOT the default mock.
 - `useAccount()` — account with 10.0 TEST token balance
 - `useNotes()` — 1 input note, 1 consumable note
 - `useSyncState()` — syncHeight: 12345, not syncing
@@ -200,11 +200,11 @@ Vitest config externalizes `@miden-sdk/miden-wallet-adapter-react` to prevent br
 
 ## Automated Verification Pipeline
 
-The [frontend template](https://github.com/0xMiden/frontend-template) ships a `.claude/settings.json` that wires Claude Code hooks to enforce quality automatically:
+The [frontend template](https://github.com/0xMiden/frontend-template) ships a `.claude/settings.json` that wires Claude Code hooks to enforce quality automatically. All three checks live under a single `PostToolUse` matcher (`Edit|Write`) and fire on every `.ts`/`.tsx` edit in `src/` (the typecheck and affected-tests hooks early-exit otherwise); the template ships no `Stop` hook:
 
 1. **PostToolUse: typecheck** — `npx tsc -b --noEmit` on every `.ts`/`.tsx` edit in `src/`
 2. **PostToolUse: affected tests** — `npx vitest --changed --run` on every `.ts`/`.tsx` edit in `src/`
-3. **Stop hook** — Full `vitest --run && tsc -b --noEmit && vite build` before task completion
+3. **PostToolUse: full verification** — `npx vitest --run && npx tsc -b --noEmit && npx vite build` (same `Edit|Write` matcher), so the full suite + build run on each src edit rather than at task completion
 
 If any hook fails (exit code 2), the agent is blocked from proceeding until the issue is fixed. Copy the same hook layout into your own `.claude/settings.json` to get the same enforcement locally.
 
@@ -223,7 +223,7 @@ If any hook fails (exit code 2), the agent is blocked from proceeding until the 
    ↓
 6. Refactor if needed
    ↓
-7. Task complete       → Stop hook: full suite + build
+7. Task complete       → full suite + build runs on each src edit (PostToolUse)
 ```
 
 ## Common Mistakes
@@ -232,6 +232,6 @@ If any hook fails (exit code 2), the agent is blocked from proceeding until the 
 
 **Not mocking the SDK**: Components importing from `@miden-sdk/react` will fail without `vi.mock()` because the real SDK requires WASM initialization.
 
-**Using number instead of bigint**: Mock amounts must use `bigint` (`1000n`, not `1000`). The SDK enforces this at the type level.
+**Using number instead of bigint for result/fixture amounts**: Result and fixture amounts are typed strictly as `bigint` (`AssetBalance.amount`, `NoteAsset.amount`, and `useAccount().getBalance()`), so mock them with bigint literals (`1000n`, not `1000`). Hook input options (`SendOptions.amount`, `MintOptions.amount`, `MultiSendRecipient.amount`, `CreateFaucetOptions.maxSupply`) accept `bigint | number`, but prefer bigint to avoid precision loss.
 
 **Testing implementation details**: Test what the user sees (text, buttons, states), not internal hook calls. Use `screen.getByRole`, `screen.getByText`, not internal component state.

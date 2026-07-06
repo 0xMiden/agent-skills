@@ -47,7 +47,7 @@ pub proc my_procedure
 | Type | Style | Example |
 |------|-------|---------|
 | Single felt | lowercase with underscores | `note_index`, `amount`, `balance` |
-| Word (4 felts) | UPPERCASE with underscores | `ASSET`, `RECIPIENT`, `SCRIPT_ROOT` |
+| Word (4 felts) | UPPERCASE with underscores | `ASSET_KEY`, `ASSET_VALUE`, `RECIPIENT`, `SCRIPT_ROOT` |
 | Multi-felt (2-3) | lowercase with `{parts}` suffix | `account_id_{prefix,suffix}` |
 
 ### Stack Order
@@ -72,8 +72,8 @@ Use empty brackets for no inputs or outputs:
 Include explicit padding for `call` procedures (see masm-padding skill):
 
 ```masm
-#! Inputs:  [ASSET, pad(12)]
-#! Outputs: [pad(16)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+#! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Invocation: call
 ```
@@ -86,7 +86,8 @@ Define every item from Inputs and Outputs:
 #! Where:
 #! - note_index is the index of the input note.
 #! - sender_{prefix,suffix} are the prefix and suffix felts of the sender ID.
-#! - ASSET is the asset word [faucet_id_prefix, faucet_id_suffix, 0, amount].
+#! - ASSET_KEY is the vault key of the fungible asset.
+#! - ASSET_VALUE is the value of the fungible asset.
 #! - balance is the fungible asset balance in the vault.
 ```
 
@@ -131,12 +132,12 @@ proc another_procedure
 end
 ```
 
-**Complex case (4+ conditions):** Reference the subprocedure:
+**Complex case (4+ conditions):** Reference the subprocedure's validation rather than re-listing every condition:
 
 ```masm
 #! Description, inputs, etc.
 #! Panics if:
-#! - another_procedure fails to verify.
+#! - another_procedure validation fails.
 proc sample_procedure
     # => [flag_1, flag_2, flag_3, flag_4]
     exec.another_procedure # this procedure may panic
@@ -176,7 +177,7 @@ or
 ```
 
 For existing procedures, a good rule of thumb is to use `call` when other procedures invoke this procedure via `call.<procedure_name>`, and `exec` if the procedure is invoked via `exec.<procedure_name>`.
-There is also `dyncall` or `syscall` but they are not commonly used and should be handled by the programmer.
+`exec` and `call` are by far the most common annotation values. There is also `dynexec` (used for dynamically-dispatched calls) and, rarely, `syscall`; these are less common and should be handled by the programmer.
 
 ## Validation Checklist
 
@@ -185,6 +186,6 @@ There is also `dyncall` or `syscall` but they are not commonly used and should b
 - [ ] All stack items defined in Where section
 - [ ] Words are UPPERCASE, felts are lowercase
 - [ ] Panics section lists direct asserts and propagated errors
-- [ ] Complex panic propagation uses "if <procedure> fails to verify" shorthand
+- [ ] Complex panic propagation references the subprocedure (e.g. "<procedure> validation fails")
 - [ ] Invocation type specified (exec or call)
 - [ ] For `call`: padding shown in Inputs/Outputs (see masm-padding skill)

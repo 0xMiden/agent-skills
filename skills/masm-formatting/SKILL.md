@@ -29,7 +29,7 @@ The conventions below are derived from canonical MASM in [protocol](https://gith
 | Single felt | `lower_snake_case` | `final_nonce`, `note_idx`, `amount` |
 | Multi-felt composite grouped in one name | `lower_snake_case_{part1,part2}` | `account_id_{suffix,prefix}`, `faucet_id_{suffix,prefix}`, `sender_{suffix,prefix}` |
 
-Composite items always use `are` in `Where:` since they name a group of felts, per `masm-doc-comments`. Brace spacing and part order are inconsistent in source: both `{suffix,prefix}` and `{suffix, prefix}` (with a space) appear, and both `{suffix,prefix}` (suffix-first, the more common form in protocol procs) and `{prefix,suffix}` (prefix-first) appear, sometimes within the same file. Match the surrounding file; do not reformat existing braces.
+Composite items always use `are` in `Where:` since they name a group of felts, per `masm-doc-comments`. Brace spacing and part order are inconsistent in source: both `{suffix,prefix}` and `{suffix, prefix}` (with a space) appear, and both `{suffix,prefix}` (suffix-first) and `{prefix,suffix}` (prefix-first) appear, sometimes within the same file. Match the surrounding file; do not reformat existing braces.
 
 Use `EMPTY_WORD` to denote the all-zero Word `[0, 0, 0, 0]` in stack trackers, `Where:` bullets, and prose comments (e.g. `# => [..., EMPTY_WORD, ...]`). It is a naming convention used in protocol-style code, not a defined constant in source; the point is to convey *meaning* (absence of data) rather than the literal numeric value.
 
@@ -52,16 +52,16 @@ Canonical references: `crates/miden-protocol/asm/protocol/tx.masm` in [protocol]
 
 `masm-doc-comments` defines the `#!` block layout. Real source shows protocol and miden-vm use different but active variants of several sections. Document both, do not flatten.
 
-| Dimension | protocol (uniform) | miden-vm (mixed across files) |
+| Dimension | protocol (dominant) | miden-vm (mixed across files) |
 |---|---|---|
-| Inputs/Outputs heading | Plural `Inputs:` / `Outputs:` | Both are active: plural in `mem.masm`, singular `Input:` / `Output:` in `crypto/hashes/poseidon2.masm` |
+| Inputs/Outputs heading | Plural `Inputs:` / `Outputs:` dominates; a few procs in `tx.masm` pair `Inputs:` with singular `Output:` | Both are active: plural in `mem.masm`, singular `Input:` / `Output:` in `crypto/hashes/poseidon2.masm` |
 | Panics heading | `Panics if:` with bullet list | `# Panics` markdown-style heading with prose (`mem.masm`), also `Panics if:` (`math/u128.masm`) |
-| `Invocation:` line | Standard (`exec`, `call`, `dynexec`) | Present in newer files (`math/u128.masm`), absent in older `crypto/hashes/*.masm` |
+| `Invocation:` line | Standard (`exec`, `call`, `dynexec`; `syscall` in kernel files) | Present in newer files (`math/u128.masm`), absent in older `crypto/hashes/*.masm` |
 | `Cycles:` section | Rare but present (multi-line form in `protocol/note.masm`) | Standard on most public procedures |
 
-Recommendation: when writing new protocol-style code (contracts, account components, tutorial MASM), follow the protocol uniform style. When editing inside an existing miden-vm file, match that file's local style.
+Recommendation: when writing new protocol-style code (contracts, account components, tutorial MASM), follow the protocol dominant style (plural `Inputs:`/`Outputs:`, `Panics if:`, `Invocation:`). Use the `Invocation:` value that matches how the procedure is reached: `call` for public account-component / contract procedures, `exec` for internal library procedures, `dynexec` for dynamically invoked procedures. When editing inside an existing miden-vm file, match that file's local style.
 
-Canonical references: `crates/miden-protocol/asm/protocol/faucet.masm` and `native_account.masm` in [protocol](https://github.com/0xMiden/protocol); `crates/lib/core/asm/mem.masm`, `crates/lib/core/asm/crypto/hashes/poseidon2.masm`, and `crates/lib/core/asm/math/u128.masm` in [miden-vm](https://github.com/0xMiden/miden-vm).
+Canonical references: `crates/miden-protocol/asm/protocol/faucet.masm` and `native_account.masm` in [protocol](https://github.com/0xMiden/protocol) for plural headings and `Invocation:`; `crates/miden-standards/asm/standards/wallets/basic.masm` in protocol for `Invocation: call` on public account-component procedures; `crates/lib/core/asm/mem.masm`, `crates/lib/core/asm/crypto/hashes/poseidon2.masm`, and `crates/lib/core/asm/math/u128.masm` in [miden-vm](https://github.com/0xMiden/miden-vm).
 
 ## 4. The `Cycles:` Section
 
@@ -96,10 +96,10 @@ Canonical references: `crates/lib/core/asm/crypto/hashes/poseidon2.masm` in [mid
 
 Two active forms:
 
-- Named constant (dominant in protocol): `assert.err=ERR_CONSTANT_NAME`.
+- Named constant (dominant in protocol): `assert*.err=ERR_CONSTANT_NAME` (the `.err=ERR_*` suffix attaches to `assert`, `assert_eq`, `assertz`, etc.).
 - Inline string (dominant in miden-vm): `assert.err="lowercase descriptive message"`.
 
-Chained guard pattern, called out in `0xMiden/agent-skills#6`:
+Chained guard pattern, called out in `0xMiden/agent-tools#6`:
 
 ```masm
 u32assert2 u32lte.MAX_LEAF_SIZE assert.err="invalid leaf: larger than maximum size of 8192"
@@ -109,7 +109,7 @@ Multiple u32 guards are chained on one line followed by a single `assert.err=` a
 
 Doc rule: `Panics if:` bullets describe the condition, not the error identifier. A bullet like `the nonce has already been incremented.` is preferred over `ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE.`.
 
-Canonical references: `crates/miden-protocol/asm/protocol/asset.masm` and `active_account.masm` in [protocol](https://github.com/0xMiden/protocol) for `assert.err=ERR_*`; `crates/lib/core/asm/mem.masm`, `crates/lib/core/asm/stark/random_coin.masm`, and `crates/lib/core/asm/collections/smt.masm` in [miden-vm](https://github.com/0xMiden/miden-vm) for inline string forms and the chained guard pattern.
+Canonical references: `crates/miden-protocol/asm/protocol/note.masm` and `asset.masm` in [protocol](https://github.com/0xMiden/protocol) for the plain `assert.err=ERR_*` form, and `active_account.masm` for the `assert_eq.err=ERR_*` form; `crates/lib/core/asm/mem.masm`, `crates/lib/core/asm/stark/random_coin.masm`, and `crates/lib/core/asm/collections/smt.masm` in [miden-vm](https://github.com/0xMiden/miden-vm) for inline string forms and the chained guard pattern.
 
 ## 6. Description Verbs
 
@@ -177,10 +177,10 @@ end
 Fix log:
 
 - Capitalized description verb and trailing period: §6 (Description Verbs); pattern across procs in `native_account.masm` in [protocol](https://github.com/0xMiden/protocol).
-- `Input:`/`Output:` rewritten to plural `Inputs:`/`Outputs:` for protocol-style code: §3 (Doc Comment Divergences); pattern in `faucet.masm` in protocol.
+- `Input:`/`Output:` rewritten to plural `Inputs:`/`Outputs:` to match the protocol-dominant plural style: §3 (Doc Comment Divergences); pattern in `faucet.masm` in protocol.
 - `Final_Nonce` rewritten to `final_nonce` (single felt is `lower_snake_case`): §1 (Capitalization).
 - `Where:` sentence ends with a period: rule owned by `masm-doc-comments`.
-- `Invocation: exec` line added: §3 (protocol uniform style includes `Invocation:`).
+- `Invocation: exec` line added: §3 (protocol dominant style includes `Invocation:`); `exec` is correct here because `get_nonce` is an internal library procedure, not a public account-component entry point (those use `Invocation: call`).
 - Inline comment lowercased: rule owned by `masm-inline-comments`.
 
 ## Canonical References
@@ -191,10 +191,11 @@ The full set of source files referenced above, by purpose. Repos: [protocol](htt
 |---|---|
 | `crates/miden-protocol/asm/protocol/native_account.masm` (protocol) | end-to-end protocol-style proc: composite `{suffix,prefix}`, `Panics if:`, `Invocation:`, inline `pad(N)` tracking |
 | `crates/miden-protocol/asm/protocol/faucet.masm` (protocol) | Word UPPERCASE in `Inputs:`/`Outputs:`, plural heading style |
-| `crates/miden-protocol/asm/protocol/tx.masm` (protocol) | `(N)` span family in both doc blocks and inline trackers |
-| `crates/miden-protocol/asm/protocol/asset.masm` (protocol) | `assert.err=ERR_*` named-constant style |
-| `crates/miden-protocol/asm/protocol/active_account.masm` (protocol) | brace-spacing variance and additional `assert.err=ERR_*` |
-| `crates/miden-protocol/asm/protocol/note.masm` (protocol) | multi-line `Cycles:` outside of stdlib |
+| `crates/miden-protocol/asm/protocol/tx.masm` (protocol) | `(N)` span family in both doc blocks and inline trackers; also the singular `Output:` exceptions to the plural-dominant style |
+| `crates/miden-standards/asm/standards/wallets/basic.masm` (protocol) | `Invocation: call` on public account-component procedures |
+| `crates/miden-protocol/asm/protocol/asset.masm` (protocol) | plain `assert.err=ERR_*` named-constant style |
+| `crates/miden-protocol/asm/protocol/note.masm` (protocol) | plain `assert.err=ERR_*` named-constant style and multi-line `Cycles:` outside of stdlib |
+| `crates/miden-protocol/asm/protocol/active_account.masm` (protocol) | brace-spacing variance and `assert_eq.err=ERR_*` named-constant style |
 | `crates/lib/core/asm/crypto/hashes/poseidon2.masm` (miden-vm) | singular `Input:`/`Output:` and all three `Cycles:` shapes |
 | `crates/lib/core/asm/mem.masm` (miden-vm) | plural `Inputs:`/`Outputs:` co-existing in vm, `# Panics` heading, `Total cycles:` prose variant |
 | `crates/lib/core/asm/math/u128.masm` (miden-vm) | `Invocation: exec` present in newer vm files |
