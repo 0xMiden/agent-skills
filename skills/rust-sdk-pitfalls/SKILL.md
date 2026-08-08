@@ -249,3 +249,19 @@ See [miden-bank deposit-note](https://github.com/0xMiden/tutorials/blob/a255af79
 **Severity**: Low -- causes incorrect architecture
 
 Note inputs (`active_note::get_storage()`) are baked at note creation time and cannot be modified after creation. Design note input layouts carefully before deployment.
+
+## P13: Digit-After-Underscore Parameter Names Break WIT Generation
+
+**Severity**: Medium — compiles to invalid WIT, fails at the component-generation step rather than at the call site
+
+The `#[component]` macro converts Rust parameter names to WIT's kebab-case identifiers. A Rust name ending a segment in `_<digit>` (e.g. `commit_0`, `slot_1`) converts to `commit-0`, `slot-1` — a digit immediately following a hyphen, which is not a valid WIT identifier.
+
+```rust
+// AVOID — trailing digit-after-underscore segment
+fn submit_commit(&mut self, commit_0: Word, commit_1: Word) { ... }
+
+// OK — spell out the position instead of using a numeric suffix
+fn submit_commit(&mut self, commit_a: Word, commit_b: Word) { ... }
+```
+
+**Rule**: Never use a bare digit after an underscore in a public (`#[component]` trait) procedure parameter name. Use letters (`_a`, `_b`, ...) or descriptive suffixes instead.
