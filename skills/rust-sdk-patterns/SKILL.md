@@ -138,6 +138,7 @@ Example: package `bank-account` + `namespace = "miden:bank-account/bank@0.1.0"` 
 | `output_note::` | `create(Tag, NoteType, Recipient) -> NoteIdx`, `add_asset(Asset, NoteIdx)` | Create output notes |
 | `faucet::` | `create_fungible_asset(Felt) -> Asset`, `mint(Asset)`, `burn(Asset)` | Asset minting |
 | `tx::` | `get_block_number() -> Felt`, `get_block_timestamp() -> Felt` | Transaction context |
+| Hashing | `hash_elements(Vec<Felt>) -> Digest` (re-exported from `miden_stdlib_sys`, `use miden::hash_elements;`) | RPO256 hash; `Digest.inner` gives the resulting `Word` |
 | Intrinsics | `assert(Felt)`, `assertz(Felt)`, `assert_eq(Felt, Felt)` | Validation (`assert` fails unless the felt equals 1; `assertz` fails unless it equals 0) |
 
 ## Asset Handling
@@ -209,6 +210,11 @@ let hex = w.to_hex();
 
 // Felt to u64 (for comparisons and arithmetic safety)
 let n: u64 = f.as_canonical_u64();
+
+// AccountId is two Felts, not one — construct via prefix + suffix
+let id = AccountId::new(prefix, suffix); // both are Felt
+// When packing an AccountId into recipient/note inputs as felts, the
+// convention is [suffix, prefix] (see rust-sdk-pitfalls skill, P8).
 ```
 
 ## No-std Requirements
