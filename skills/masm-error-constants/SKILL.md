@@ -7,7 +7,7 @@ description: Use when adding or editing MASM `assert*` instructions — give eve
 
 ## Rule
 
-Every MASM assertion should carry a descriptive error message. There are two valid forms in v0.15 source:
+Every MASM assertion should carry a descriptive error message. There are two valid forms:
 
 - **Named `ERR_*` constant** — preferred for reusable or shared errors, and the dominant style in protocol/standards code:
 

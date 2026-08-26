@@ -19,18 +19,18 @@ A generic helper that hard-codes one slot id can only ever serve that one slot �
 
 ## When NOT to parameterize
 
-A storage slot id in v0.15 is **name-derived, not positional**: the id is the first two felts of the hash of the slot's name (`word("project::component::slot")`), so the **same slot name produces the same slot id in every account that installs the component**. A component that reads/writes its **own** dedicated named slot is therefore portable by construction — there is nothing to parameterize, because the name fixes the id everywhere.
+A storage slot id is **name-derived, not positional**: the id is the first two felts of the hash of the slot's name (`word("project::component::slot")`), so the **same slot name produces the same slot id in every account that installs the component**. A component that reads/writes its **own** dedicated named slot is therefore portable by construction — there is nothing to parameterize, because the name fixes the id everywhere.
 
 The canonical, correct idiom for a component's own slot is a named-`word` constant plus a `[0..2]` slice — do not "fix" this to take a slot parameter:
 
 ```masm
 # Correct and portable: the component owns this named slot; the name hashes
 # to the same slot id in every account, so no parameter is needed.
-pub const AUTHORITY_SLOT = word("miden::standards::access::authority")
+pub const AUTHORITY_SLOT = word("miden::standards::access::authority::authority_config")
 
 pub proc assert_authorized
     push.AUTHORITY_SLOT[0..2] exec.active_account::get_item
-    # => [authority, role_symbol, 0, 0]
+    # => [authority, is_frozen, 0, 0]
     # ...
 end
 ```

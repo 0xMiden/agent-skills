@@ -71,14 +71,16 @@ The VM hard-requires the visible stack depth to be exactly 16 when a context-swi
 Use `pad(N)` notation where N + other elements = 16:
 
 ```masm
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
 #! Outputs: [pad(16)]
 #!
 #! Invocation: call
 pub proc receive_asset
 ```
 
-This is a strong convention, not an absolute documentation rule. Some standard `call` procedures document only their *logical* stack (fewer than 16 elements, no `pad`) — for example multisig accessors document `Inputs: [index]` / `Outputs: [PUB_KEY, scheme_id]`. Prefer `pad(N)`-to-16 for new code, but do not flag logical-only documentation on an existing `call`/`dyncall`/`syscall` proc as a bug.
+This is a strong convention, not an absolute documentation rule. Some standard `call` procedures document only their *logical* stack (fewer than 16 elements, no `pad`) — e.g. `standards/auth/multisig.masm`'s `set_procedure_threshold` documents `Inputs: [proc_threshold, PROC_ROOT]` / `Outputs: []`, and `standards/auth/guardian.masm`'s `update_guardian_public_key` documents `Inputs: [new_guardian_scheme_id, NEW_GUARDIAN_PUBLIC_KEY]` / `Outputs: []`. Prefer `pad(N)`-to-16 for new code, but do not flag logical-only documentation on an existing `call`/`dyncall`/`syscall` proc as a bug.
+
+Note that padded-to-16 is the majority even for accessors: the multisig `get_threshold_and_num_approvers` documents `Inputs: [pad(16)]` / `Outputs: [default_threshold, num_approvers, pad(14)]`.
 
 ### Inline Comment Format
 
@@ -100,14 +102,14 @@ Procedures invoked with `exec` or `dynexec` share the caller's stack directly, s
 Most `exec`/`dynexec` procedures document only their logical inputs/outputs, without explicit padding:
 
 ```masm
-#! Inputs:  [PUB_KEY, scheme_id]
+#! Inputs:  [PK_COMM, scheme_id]
 #! Outputs: []
 #!
 #! Invocation: exec
 pub proc authenticate_transaction
 ```
 
-The same holds for `dynexec` — e.g. the `TokenPolicyManager` faucet policies document logical I/O (`Inputs: [amount, tag, note_type, RECIPIENT]` for a mint policy; `Inputs: [ASSET_KEY, ASSET_VALUE]` / `Outputs: []` for a burn policy), exactly like `exec`.
+The same holds for `dynexec`, whose `Invocation:` value dominates the kernel API module (`kernels/transaction/lib/api.masm`).
 
 The exception is when the caller itself works in a padded-to-16 context: then the `exec`/`dynexec` proc documents `pad(N)`-to-16 to match the caller. The kernel transaction API does this — its `dynexec` procedures pad to 16 (e.g. `account_get_initial_commitment` documents `Inputs: [pad(16)]` / `Outputs: [INIT_COMMITMENT, pad(12)]`) because the surrounding caller convention is padded. Padding for same-context procedures is dictated by the caller, not by the invocation instruction.
 
@@ -142,35 +144,29 @@ For context-switching procedures these extra elements must be explicitly dropped
 
 ## Debugging Stack Depth
 
-When unsure whether the stack matches the depth you expect, use the assembly's debug instructions to inspect it at runtime. These cost zero VM cycles and do not affect the program hash.
+When unsure whether the stack matches the depth you expect, inspect it at runtime with the `miden::core::debug` procedures. There are no `debug.*` decorators — print-style debugging is done with ordinary procedure calls that `emit` a well-known event the host handles by printing VM state:
 
-- `debug.stack` – print the full operand stack.
-- `debug.stack.N` – print only the top N elements. N is a `u8` (syntactic range `0..=255`); the useful range for "top N" is `1..=255`. `debug.stack.0` is accepted and prints the whole operand stack (equivalent to `debug.stack`).
+```masm
+use miden::core::debug
+
+exec.debug::print_stack        # print the entire operand stack
+```
+
+The module exports `print_stack`, `print_mem`, `print_mem_addr`, `print_mem_all`, `print_adv_stack`, `print_adv_stack_all`, `print_adv_map_all`, and `print_adv_map_item`. `print_mem` takes `[start, end]` and consumes both; a range wider than 1024 addresses aborts execution.
+
 - `sdepth` – push the current stack depth onto the stack as a felt; useful when you need depth as a runtime value, e.g. to assert it:
 
   ```masm
   sdepth push.16 eq assert.err="depth must be 16 here"
   ```
 
-Debug instructions run when the program is executed with debug mode enabled. The `miden-vm run` command runs with debug mode enabled by default — just run the program to see their output:
-
-```bash
-miden-vm run program.masm
-```
-
-Pass `--release` (`-r`) to disable debug instructions (release mode):
-
-```bash
-miden-vm run program.masm --release
-```
-
-Debug instructions are compiled into the MAST as decorators (they are not stripped at compile time). When debug mode is disabled they are skipped at execution time — i.e. not executed — rather than removed. Remove or comment out `debug.*` lines before committing production MASM.
+**These procedures print unconditionally.** They are `emit`-based, carry no MAST decorator cost, and there is no debug-mode toggle that suppresses them — `miden-vm run` has no `--debug` or `--release` flag. Anything you leave in ships and prints on every execution, so remove every `exec.debug::print_*` call before committing production MASM.
 
 ## Validation Checklist
 
 For all invocation types:
 - [ ] Inline `# =>` trackers reflect the post-auto-pad depth (never below 16) at the context-switch boundaries that enforce the floor (`call`, `dyncall`, `syscall`, note scripts, tx scripts)
-- [ ] No `debug.*` instruction is left in production MASM
+- [ ] No `exec.debug::print_*` call is left in production MASM (they print unconditionally)
 
 For context-switching procedures (`call`, `dyncall`, `syscall`):
 - [ ] On return, the visible stack depth is exactly 16 (the VM traps otherwise)

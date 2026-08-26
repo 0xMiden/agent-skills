@@ -14,9 +14,11 @@ Declare how many locals the procedure needs with `@locals(N)` directly above the
 - `loc_store` / `loc_load` for a single element.
 - `loc_storew_le` / `loc_loadw_le` (or the `_be` variants) for a full word.
 
-The bare `loc_storew` / `loc_loadw` instructions have been removed and now raise a deprecation error — use the `_le` / `_be` word variants instead.
+There are no bare `loc_storew` / `loc_loadw` instructions: writing one is a parse error (`deprecated instruction: 'loc_storew' has been removed`). Always name the byte order with the `_le` / `_be` variant.
 
 Global memory regions are reserved for state that crosses procedure boundaries (kernel inputs, account data, advice-keyed state). Stashing per-call scratch there leaks an implementation detail into a shared namespace and ties the procedure to a fixed address.
+
+This ranks locals against globals only. Scratch that fits on the operand stack — loop counters, pointers, indices — belongs there rather than in a local; see `cheap-masm-equivalents`.
 
 ## Why
 
