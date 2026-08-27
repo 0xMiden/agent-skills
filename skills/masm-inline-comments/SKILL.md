@@ -13,10 +13,8 @@ Inline comments (single `#`) should begin with a lowercase letter.
 
 ```masm
 # good: lowercase start
-# remove the asset from the account
 exec.native_account::remove_asset
-dropw
-# => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+# => [ASSET, note_idx, pad(11)]
 
 # Bad: uppercase start (avoid)
 # Remove the asset from the account
@@ -33,7 +31,7 @@ Only apply this rule to new code you write. Do not remove comments that are pres
 - Standard control flow: `if.true`, `while.true`, `end`
 
 **Do comment:**
-- Stack state after complex operations: `# => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]`
+- Stack state after complex operations: `# => [ptr, ASSET, end_ptr]`
 - Purpose of a code block: `# compute the pointer at which we should stop iterating`
 - Non-obvious logic or business rules
 - TODO items and references to external specs
@@ -43,7 +41,7 @@ Only apply this rule to new code you write. Do not remove comments that are pres
 Insert a blank line after a `# => [...]` stack-state tracker, except when the next non-blank line is one of:
 
 - `end` (proc / `while.true` / `if.true` / `repeat.N` closing).
-- A control-flow keyword such as `else` (note: `else` is always bare; a false-conditioned branch uses `if.false`, not an `else.*` suffix).
+- A control-flow keyword such as `else`, `else.true`, or `else.false`.
 - Another `# =>` line that continues the same multi-line stack state.
 - A `#` continuation comment that explains the tracker.
 
@@ -52,13 +50,11 @@ This pairs each stack state visually with the operation that produced it and let
 **Good:**
 
 ```masm
-dupw.1 dupw.1
-# => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-
-# remove the asset from the account
 exec.native_account::remove_asset
-dropw
-# => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+# => [ASSET, note_idx, pad(11)]
+
+dupw dup.8 movdn.4
+# => [ASSET, note_idx, ASSET, note_idx, pad(11)]
 ```
 
 **Also OK (no blank line before `end` or control flow):**
@@ -70,19 +66,19 @@ end
 
 ### 4. Match the doc block
 
-An inline `# => [...]` tracker uses the same item names, capitalization, and `(N)` span notation as the `#!` doc block for the enclosing procedure (see `masm-doc-comments`):
+An inline `# => [...]` tracker uses the same item names, capitalization, and `(N)` span notation as the `#!` doc block for the enclosing procedure (see masm-doc-comments skill):
 
 - Single-felt names stay lowercase: `note_idx`, `final_nonce`.
-- Word names stay UPPERCASE: `ASSET_ID`, `ASSET_VALUE`, `RECIPIENT`.
+- Word names stay UPPERCASE: `ASSET`, `RECIPIENT`.
 - `(N)` spans stay lowercase: `pad(12)`, `foreign_procedure_inputs(15)`.
 
-Composite names like `account_id_{suffix,prefix}` are a doc-block shorthand for a group of felts. In inline trackers they decompose into their individual felts, since each felt occupies one stack slot:
+Composite names like `account_id_{suffix,prefix}` are a doc-block shorthand for a group of felts. In inline trackers they decompose into their individual felts since each felt occupies one stack slot:
 
 ```masm
 #! Inputs:  [account_id_{suffix,prefix}, amount]
 pub proc transfer
     # => [account_id_suffix, account_id_prefix, amount]
-    # ...
+    ...
 end
 ```
 
@@ -96,9 +92,9 @@ Inline comments explain what the code does for a future reader, not why a partic
 
 ### 7. Accessing a word's individual elements
 
-When a tracker needs to show individual elements of a word, destructure the word and group the elements with brackets:
+When accessing individual elements of a word, show the word destructured into elements, grouped with brackets, e.g.:
 
-```masm
+```
 # => [ASSET_ID, ASSET_VALUE]
 # => [[asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix], ASSET_VALUE]
 
@@ -106,23 +102,20 @@ dup
 # => [asset_class_suffix, ASSET_ID, ASSET_VALUE]
 ```
 
-An `Asset` occupies two words on the stack — the `ASSET_ID` word followed by the `ASSET_VALUE` word — so a procedure that takes one asset shows both.
-
 ## Examples
 
 **Good:**
 
 ```masm
-dupw.1 dupw.1
-# => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-
 # remove the asset from the account
 exec.native_account::remove_asset
-dropw
-# => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+# => [ASSET, note_idx, pad(11)]
+
+dupw dup.8 movdn.4
+# => [ASSET, note_idx, ASSET, note_idx, pad(11)]
 
 exec.output_note::add_asset
-# => [pad(16)]
+# => [ASSET, note_idx, pad(11)]
 ```
 
 **Avoid:**

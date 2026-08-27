@@ -143,7 +143,7 @@ does not cross the WASM boundary.
 
 ## Mock shapes that need checking
 
-Fixtures carried over from an older SDK will type-check and then lie:
+These shapes type-check against a loosely-typed fixture and then lie at runtime. Check each one against the current API:
 
 - **`debugMode` does not exist.** `MidenConfig` is
   `{ rpcUrl?, noteTransportUrl?, autoSyncInterval?, seed?, prover?, proverUrls?, proverTimeoutMs?, useWorker? }`.

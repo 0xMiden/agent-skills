@@ -13,7 +13,7 @@ Every public MASM procedure should have a doc comment block using `#!` prefix wi
 2. **Inputs/Outputs** - Stack state before/after
 3. **Where** - Explanation of each stack item (omit when the Description already names every item)
 4. **Panics if** - Error conditions (when applicable)
-5. **Invocation** - How the procedure is called (`exec`, `call`, `dynexec`, or `syscall`)
+5. **Invocation** - How the procedure is called (`exec`, `call`, or `dyncall`; omitted for syscall-invoked kernel procedures)
 
 ## Required Format
 
@@ -47,17 +47,13 @@ pub proc my_procedure
 | Type | Style | Example |
 |------|-------|---------|
 | Single felt | lowercase with underscores | `note_index`, `amount`, `balance` |
-| Word (4 felts) | UPPERCASE with underscores | `ASSET_ID`, `ASSET_VALUE`, `RECIPIENT`, `SCRIPT_ROOT` |
+| Word (4 felts) | UPPERCASE with underscores | `ASSET`, `RECIPIENT`, `SCRIPT_ROOT` |
 | Multi-felt (2-3) | lowercase with `{parts}` suffix | `account_id_{suffix,prefix}` |
 | All-zero Word | `EMPTY_WORD` | `[..., EMPTY_WORD, ...]` |
 
 `EMPTY_WORD` is a naming convention used in stack trackers, `Where:` bullets, and prose comments to denote the all-zero Word `[0, 0, 0, 0]`.
 
-In composite braces, list parts in **stack-top-first order**: `account_id_{suffix,prefix}`, because the suffix sits on top of the stack and the prefix below it. The same applies to other split-128-bit IDs (`sender_{suffix,prefix}`, `faucet_id_{suffix,prefix}`, etc.). Suffix-first dominates protocol source by roughly six to one; write it that way in new code.
-
-Brace *spacing* is genuinely mixed in source — both `{suffix,prefix}` and `{suffix, prefix}` are common — so match the surrounding file rather than reformatting existing braces.
-
-An `Asset` occupies two words and is documented as two items: the `ASSET_ID` word followed by the `ASSET_VALUE` word.
+In composite braces, list parts in **stack-top-first order, no spaces inside the braces**: `account_id_{suffix,prefix}` because the suffix sits on top of the stack and the prefix below it. The same rule applies to other split-128-bit IDs (`sender_{suffix,prefix}`, `faucet_id_{suffix,prefix}`, etc.).
 
 ### Stack Order
 
@@ -85,27 +81,26 @@ Use empty brackets for no inputs or outputs:
 #! Outputs: [foreign_procedure_outputs(16)]
 ```
 
-### Padding (for procedures entered at the stack-depth-16 floor)
+### Padding (for `call` and `dyncall` procedures)
 
-Procedures entered via `call` (and dynamically-dispatched entry points) must show explicit padding so Inputs and Outputs each sum to 16 elements (see masm-padding skill):
+Procedures entered at the stack-depth-16 floor (`call` and `dyncall`) must show explicit padding so Inputs and Outputs each sum to 16 elements (see masm-padding skill):
 
 ```masm
-#! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
-#! Outputs: [FINAL_ASSET_VALUE, pad(12)]
+#! Inputs:  [ASSET, pad(12)]
+#! Outputs: [pad(16)]
 #!
 #! Invocation: call
 ```
 
 ## Where Section
 
-Define every item from Inputs and Outputs that needs description:
+Define every item from Inputs and Outputs:
 
 ```masm
 #! Where:
 #! - note_index is the index of the input note.
 #! - sender_{suffix,prefix} are the suffix and prefix felts of the sender ID.
-#! - ASSET_ID is the asset ID of the asset to be burnt.
-#! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
+#! - ASSET_ID is the asset ID of the asset [0, 0, faucet_id_suffix, faucet_id_prefix].
 #! - balance is the fungible asset balance in the vault.
 ```
 
@@ -115,8 +110,8 @@ Define every item from Inputs and Outputs that needs description:
 - End each line with a period
 - Group related items (e.g., all inputs, then all outputs)
 - Avoid including low-level details, e.g. how a value is computed.
-    - Good: `NOTE_DETAILS_COMMITMENT is the commitment to the note's details.`
-    - Avoid: `NOTE_DETAILS_COMMITMENT is the commitment to the note's details computed as hash(RECIPIENT_DIGEST || ASSETS_COMMITMENT).`
+    - Good: NOTE_DETAILS_COMMITMENT is the commitment to the note's details.
+    - Avoid: NOTE_DETAILS_COMMITMENT is the commitment to the note's details computed as `hash(RECIPIENT_DIGEST || ASSETS_COMMITMENT)`.
 
 ### When `Where:` may be omitted
 
@@ -129,13 +124,12 @@ Omit the `Where:` section entirely when the Description already names every Inpu
 #! Outputs: [max_supply, pad(15)]
 #!
 #! Invocation: call
-@account_procedure
 pub proc get_max_supply
 ```
 
 No `Where:` is needed: the single named output `max_supply` is already identified by the Description. If you would otherwise write `#! - max_supply is the maximum supply.`, skip it.
 
-Add `Where:` whenever any item needs description beyond what the Description line conveys — different name, additional constraint, composition, or anything non-obvious.
+Add `Where:` whenever any item needs description beyond what the Description line conveys — different name, additional constraint, composition (`ASSET_ID = [0, 0, faucet_id_suffix, faucet_id_prefix]`), or anything non-obvious.
 
 ## Panics Section
 
@@ -174,12 +168,12 @@ proc another_procedure
 end
 ```
 
-**Complex case (4+ conditions):** Reference the subprocedure's validation rather than re-listing every condition:
+**Complex case (4+ conditions):** Reference the subprocedure:
 
 ```masm
 #! Description, inputs, etc.
 #! Panics if:
-#! - another_procedure validation fails.
+#! - another_procedure fails to verify.
 proc sample_procedure
     # => [flag_1, flag_2, flag_3, flag_4]
     exec.another_procedure # this procedure may panic
@@ -206,14 +200,13 @@ Omit the "Panics if:" section entirely if the procedure cannot panic.
 
 ## Invocation Types
 
-Specify how the procedure should be invoked. The value matches the MASM instruction a caller uses to enter the procedure:
+Specify how the procedure should be invoked. The value matches the MASM instruction that user-code callers use to enter the procedure:
 
 | Value | Used by callers as | When to use |
 |---|---|---|
-| `exec` | `exec.<proc>` | Standard inline call. Shares the caller's stack and context; no padding requirement. |
+| `exec` | `exec.<proc>` | Standard inline call. Shares the caller's stack; no padding requirement. |
 | `call` | `call.<proc>` | Cross-context call (e.g. into another account). Enters at stack depth 16 — Inputs/Outputs must show `pad(N)` to total 16 (see masm-padding). |
-| `dynexec` | `dynexec` / `dyncall` on a procedure root | Dynamically-dispatched entry point, e.g. the kernel API procedures reached through the transaction kernel's dispatch. |
-| `syscall` | `syscall.<proc>` | Rare; a procedure invoked directly as a kernel syscall. |
+| `dyncall` | `dyncall` from a script | Entry point of a note script or transaction script. Stack-depth-16 floor applies on entry. |
 
 ```masm
 #! Invocation: exec
@@ -223,11 +216,15 @@ Specify how the procedure should be invoked. The value matches the MASM instruct
 #! Invocation: call
 ```
 
-For existing procedures, pick the value that matches how callers invoke them: `call` when invoked via `call.<procedure_name>`, `exec` for `exec.<procedure_name>`. `exec` and `call` dominate ordinary module code; `dynexec` dominates the kernel API module (`kernels/transaction/lib/api.masm`), and `syscall` appears only once in protocol source.
+```masm
+#! Invocation: dyncall
+```
 
-### Kernel-internal modules omit the line
+For existing procedures, pick the value that matches how callers invoke them: `call` when invoked via `call.<procedure_name>`, `exec` for `exec.<procedure_name>`, `dyncall` for note-script and transaction-script entry points.
 
-Most procedures in the kernel's internal modules (`crates/miden-protocol/asm/kernels/transaction-core/src/*`) carry no `Invocation:` line — `account.masm` has 38 `pub proc` and zero annotations. It is not absolute: `transaction-core/src/tx.masm` annotates six procedures (five `exec`, one `dynexec`). The kernel's public API module (`kernels/transaction/lib/api.masm`) does annotate its procedures. Follow the surrounding module.
+### Kernel procedures (syscall-invoked) are exempt
+
+Kernel procedures under `crates/miden-protocol/asm/kernels/` are invoked by the VM via `syscall.<proc>` from user code. They do not carry an `Invocation:` line — the `syscall` invocation model is implied by the procedure's location in a kernel module. Omit the `Invocation:` line entirely for these procs.
 
 ## Prose Conventions
 
@@ -235,7 +232,7 @@ Doc comments are read by people unfamiliar with the change that introduced them.
 
 ### Reuse existing terminology
 
-Use the vocabulary already established in surrounding modules and doc comments. Do not coin new terms or borrow colloquialisms for a concept that already has a name. For example, a value written to a local is "stored" or "saved" (matching `loc_storew_le`), not "stashed"; describe what code does plainly rather than labelling it ("load-bearing", "the real check", and similar).
+Use the vocabulary already established in surrounding modules and doc comments. Do not coin new terms or borrow colloquialisms for a concept that already has a name. For example, a value written to a local is "stored" or "saved" (matching `loc_storew`), not "stashed"; describe what code does plainly rather than labelling it ("load-bearing", "the real check", and similar).
 
 ### Document the procedure, not the change
 
@@ -250,11 +247,11 @@ Describe behavior in terms of this procedure and its inputs and outputs. Do not 
 - [ ] Description starts with a capitalized present-tense verb and the first sentence ends with a period. Canonical verbs observed in protocol source: `Returns`, `Gets`, `Computes`, `Burns`, `Creates`, `Increments`, `Copies`, `Asserts`, `Verifies`, `Hashes`, `Adds`, `Removes`.
 - [ ] Inputs and Outputs use correct stack notation
 - [ ] Where section defines every stack item that needs description beyond the Description line, and is omitted entirely when the Description alone covers every item
-- [ ] Words are UPPERCASE, felts are lowercase; composite braces are stack-top-first (`account_id_{suffix,prefix}`), matching the surrounding file's brace spacing
-- [ ] Panics section lists direct asserts and propagated errors, describing conditions rather than `ERR_*` identifiers
-- [ ] Complex panic propagation references the subprocedure (e.g. "<procedure> validation fails")
-- [ ] Invocation type specified (`exec`, `call`, `dynexec`, or `syscall`), or omitted to match a kernel-internal module
-- [ ] For `call`: padding shown in Inputs/Outputs (see masm-padding skill)
+- [ ] Words are UPPERCASE, felts are lowercase
+- [ ] Panics section lists direct asserts and propagated errors
+- [ ] Complex panic propagation uses "if <procedure> fails to verify" shorthand
+- [ ] Invocation type specified: `exec`, `call`, or `dyncall`. Kernel (syscall-invoked) procedures are exempt — no `Invocation:` line.
+- [ ] For `call` and `dyncall`: padding shown in Inputs/Outputs (see masm-padding skill)
 - [ ] Prose reuses existing terminology; no coined terms or colloquialisms
 - [ ] Describes the procedure's current behavior, not the change that introduced it
 - [ ] No lower-layer (kernel/syscall) implementation details; panic bullets describe conditions in domain terms

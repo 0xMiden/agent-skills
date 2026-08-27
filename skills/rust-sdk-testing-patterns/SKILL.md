@@ -274,8 +274,8 @@ mock_chain.prove_next_block()?;
 let updated_account = mock_chain.committed_account(account.id())?;
 ```
 
-`TransactionScript::from_parts(Arc<MastForest>, MastNodeId)` still exists but is no longer the path
-you need for compiler-produced tx-script packages.
+`TransactionScript::from_parts(Arc<MastForest>, MastNodeId)` exists, but it is not the path for
+compiler-produced tx-script packages — use the package-based construction shown above.
 
 ### 10. Verify Storage State
 

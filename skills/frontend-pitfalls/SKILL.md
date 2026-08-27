@@ -66,7 +66,7 @@ Source: `packages/react-sdk/src/context/MidenProvider.tsx`, `packages/react-sdk/
 
 ## FP2: Interleaving Multi-Step Client Sequences (HIGH)
 
-**A single concurrent call no longer crashes.** The client serializes itself in layers, so `sync()` racing one `client.getAccount()` is safe:
+**A single concurrent call is safe.** The client serializes itself in layers, so `sync()` racing one `client.getAccount()` does not crash:
 
 1. **Layer 1 — in-process call chain.** The `WebClient` wrapper queues WASM calls on a per-instance promise chain (`_serializeWasmCall`). Methods it does not wrap explicitly are still routed onto the chain by its `Proxy` fallback; the only exceptions are the entries in its `SYNC_METHODS` set, which are documented as safe to bind raw. Its own comment names the panic this prevents: `"recursive use of an object detected"` (wasm-bindgen's internal `RefCell`).
 2. **Layer 2 — Web Locks.** Exactly three entry points run under `withSyncLock(dbId, methodId, fn)`: `syncState`, `syncChain` and `syncNoteTransport` (on both `WebClient` and `MockWebClient`, so six call sites). It coalesces concurrent calls of the *same* method into one shared promise and serializes *different* methods on the same database — **across browser tabs**. Where the Web Locks API is unavailable it degrades to an in-process per-database promise chain. Note that `fetchPrivateNotes` is **not** among them: it has no JS wrapper, so it gets Layer 1 serialization only, with no Web Lock and no cross-tab coalescing.

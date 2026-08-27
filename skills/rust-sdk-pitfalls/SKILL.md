@@ -66,51 +66,130 @@ let timelock_height = BlockNumber::try_from(inputs[3]).unwrap();
 assert!(block_number >= timelock_height);           // integer comparison, correct as written
 ```
 
-## P3: Direct Call Boundary Passes At Most 16 Stack Felts (4 Words)
+## P3: The 16-Felt Cross-Context Boundary — Two Limits, and Exports Differ From FPI Imports
 
-**Severity**: High — exceeding the 16-felt call boundary is a compile error
+**Severity**: High — the wrong mental model makes you refactor a signature that would have compiled,
+and miss the one that will not
 
-A direct cross-context / export / FPI call passes its parameters on the MASM operand stack, whose addressable window is 16 felts (4 Words, counting the canonical-ABI result pointer when present). Passing more than 16 flat felts across that boundary is a **compilation error**: after expanding 64-bit values and any result pointer, the flattened parameters must fit in 16 operand-stack felts. (Indirection for larger payloads via the advice provider is not implemented, so today the limit is hard.)
+A cross-context call passes its parameters on the MASM operand stack, whose addressable window is 16
+felts (4 Words, counting the canonical-ABI result pointer when present). Two *different* limits
+govern that boundary, and conflating them is the actual pitfall:
+
+- **`MAX_FLAT_PARAMS = 16`** — a **count** of canonical-ABI flat values.
+- **`MAX_DIRECT_STACK_FELTS = 16`** — a **felt budget**, measured after `u64` values expand to two
+  felts each and any result pointer is added.
+
+Both live in `compiler:sdk/v0.14.0-rc.1:frontend/wasm/src/component/types/mod.rs:44-62`, whose own
+doc comment spells out the distinction: the felt budget "is a Miden VM constraint, distinct from the
+spec's count-based `MAX_FLAT_PARAMS`: a signature can stay within 16 flat values while 64-bit values
+expand it past 16 stack felts."
+
+Exceeding **either** limit makes canonical-ABI flattening replace the whole parameter list with a
+single pointer to a tuple in linear memory — `flat_params_need_tuple` is an **OR**
+(`compiler:sdk/v0.14.0-rc.1:frontend/wasm/src/component/flat.rs:212-217,263-270`):
 
 ```rust
-// COMPILE ERROR — flattens to 20 felts
+flat_params.len() > MAX_FLAT_PARAMS
+    || flat_params.iter().map(|param| param.ty.size_in_felts()).sum::<usize>()
+        > MAX_DIRECT_STACK_FELTS
+```
+
+What happens to that pointer is where the two sides of the boundary part ways.
+
+### FPI imports: the count decides the path, the felt budget can still reject it
+
+The critical subtlety: `plan_fpi_call` does **not** reuse the OR above. It re-derives the call shape
+from the flat-value **count alone**
+(`compiler:sdk/v0.14.0-rc.1:frontend/wasm/src/component/lower_imports.rs:330-351`):
+
+```rust
+let has_arg_ptr = flattened_params.len() > MAX_FLAT_PARAMS;
+```
+
+So the two disagree in exactly one band — **count ≤ 16 but felts > 16**. Flattening *has* tupled
+such a signature, but `plan_fpi_call` still believes it is a direct call, so it takes the
+`!has_arg_ptr` path, sums the operand felts, and rejects:
+
+```
+FPI import `{path}` lowers to {n} operand stack felts after expanding 64-bit
+values and result pointers, but direct FPI calls support at most 16
+```
+
+The source says this check is deliberately ordered first, because "over-budget direct shapes are
+tupled by canonical ABI flattening, which would otherwise surface as a confusing shape mismatch."
+
+```rust
+// REJECTED — 13 flat values, so the count-based `has_arg_ptr` is false, but six
+// `u64`s expand to two felts each: 6 prefix felts + 12 + 1 + 1 result pointer
+// = 20 operand felts.
+struct SixU64Record { a: u64, b: u64, c: u64, d: u64, e: u64, f: u64, tag: Felt }
+fn echo_six_u64_record(&self, input: SixU64Record) -> SixU64Record;
+```
+
+That is the compiler's own negative test,
+`compiler:sdk/v0.14.0-rc.1:tests/integration-network/src/mockchain/fpi/note/six_u64_struct.rs:5-13`
+(`#[should_panic(expected = "direct FPI calls support at most 16")]`).
+
+**Above 16 flat values the indirect path is supported** — `has_arg_ptr` is true, the felt-budget
+check is skipped entirely, and the wrapper reloads the tuple so the backend still sees a direct,
+felt-only call
+(`compiler:sdk/v0.14.0-rc.1:frontend/wasm/src/component/lower_imports.rs:439-508`). A
+22-flat-parameter FPI import is a **passing** test
+(`compiler:sdk/v0.14.0-rc.1:tests/integration-network/src/mockchain/fpi/note/sixteen_flattened_params_struct.rs`).
+
+**Indirect is not unbounded, though.** The FPI executor imposes its own caps, checked after the
+shape is settled (`compiler:sdk/v0.14.0-rc.1:frontend/wasm/src/component/lower_imports.rs:381-399`),
+with values from `ExecFpi` (`compiler:sdk/v0.14.0-rc.1:dialects/hir/src/ops/invoke.rs:160-169`):
+
+| bound | value | diagnostic |
+| --- | --- | --- |
+| `PREFIX_FELTS` — account id + procedure root, subtracted before the input check | 6 | `must pass account id and procedure root` |
+| `MAX_INPUT_FELTS` — flattened *procedure input* felts, after the prefix | 16 | ``passes {n} flattened procedure input felts, but `execute_foreign_procedure` supports at most 16`` |
+| `EXECUTOR_RESULT_FELTS` — result felts | 16 | ``returns {n} result felts, but `execute_foreign_procedure` supports at most 16`` |
+
+So the tuple pointer buys you past the *stack window*, not past the *protocol*: the payload the
+foreign procedure actually receives is still capped at 16 felts.
+
+**Do not "fix" the felt-budget rejection by padding the signature until the count exceeds 16** just
+to trigger the indirect path. It does flip `has_arg_ptr` and skip the stack-window check, but the
+executor's 16-felt input cap then rejects the same payload — you have only moved which diagnostic
+fires. Reduce what crosses the boundary instead: split the call, or hand over an identifier (a
+storage key, a note index, a commitment) and let the callee load the rest itself.
+
+### Component exports: indirect parameters are not implemented yet
+
+On the export side the tuple pointer is produced the same way but then refused, so **either** an
+over-16 flat-value count **or** an over-16 felt budget fails
+(`compiler:sdk/v0.14.0-rc.1:frontend/wasm/src/component/lift_exports.rs:68-74`):
+
+```
+component export lifting for '{path}' is not yet implemented for passing the
+parameters using the advice provider in the cross-context `call`;
+```
+
+```rust
+// REJECTED as a component export — flattens to 20 felt params.
 fn process(a: Word, b: Word, c: Word, d: Word, e: Word) { ... }
 
-// STILL A COMPILE ERROR — a wrapper struct compresses nothing. Flattening
-// recurses into struct fields and concatenates them, so a WordBatch holding
-// those same five Words is still 20 felts.
+// STILL REJECTED — a wrapper struct compresses nothing. Flattening recurses
+// into struct fields and concatenates them, so a WordBatch holding those same
+// five Words is still 20 felts.
 fn process(batch: WordBatch) { ... }
 
-// ALSO REJECTED — `&T` parameters are refused outright:
-// "references are not supported in component interfaces or exported types".
-fn process(a: &Word, b: &Word, c: &Word, d: &Word, e: &Word) { ... }
-
-// OK — reduce what actually crosses the boundary. Either split the operation
-// into calls that each fit, or pass one small handle the callee uses to fetch
-// the rest (a storage key, a note index, a commitment it can check against data
-// it loads itself).
+// OK — reduce what actually crosses the boundary.
 fn process(batch_commitment: Word) { ... }
 ```
 
-There is no wrapper, reference or indirection trick that makes an over-wide
-signature fit — indirection via the advice provider is not implemented. The only
-fixes are **fewer felts across the boundary**: split the call, or hand over an
-identifier and let the callee load the data.
+Export **return** values are capped separately, at 16 loaded *values* (a count, with no felt-budget
+check at all — a record of nine `u64` fields is 9 values but 18 felts and is not caught):
+`compiler:sdk/v0.14.0-rc.1:frontend/wasm/src/component/lift_exports.rs:281-286`.
 
-**Two distinct enforcement sites**, with different messages:
+### Unrelated, but adjacent
 
-- Component **exports**: `Too many parameters in the flattened signature of {fn} component export
-  function. For cross-context calls only up to 16 felt flattened params supported (advice provider
-  is not yet supported).` A matching assertion caps return values at 16 felts.
-- **FPI imports**: `FPI import '{path}' lowers to {n} operand stack felts after expanding 64-bit
-  values and result pointers, but direct FPI calls support at most 16`.
-
-**Nuance**: the *count* limit and the *felt-budget* limit are different constraints
-(`MAX_FLAT_PARAMS = 16`, `MAX_FLAT_RESULTS = 1`, `MAX_DIRECT_STACK_FELTS = 16`). When the flat
-parameter *count* exceeds 16 the canonical ABI tuples them behind one pointer, so the felt budget
-is what actually bites: a signature can stay under 16 flat values yet blow past 16 stack felts once
-`u64` values expand (six `u64`s plus one felt = 13 flat values but 19 stack felts, which is
-rejected).
+`&T` parameters are refused before any of this, by the `#[component]` macro rather than the
+compiler frontend: `references are not supported in component interfaces or exported types`
+(`compiler:sdk/v0.14.0-rc.1:sdk/base-macros/src/types.rs:102-106`). It applies to exported method
+parameters, return types, and exported struct/enum fields alike — `&self` receivers are fine.
 
 ## P4: Storage API Is Typed, and a Component Is Three Parts
 
@@ -224,8 +303,11 @@ All contract code must be `#![no_std]`. Forgetting this or using std types cause
 #![feature(alloc_error_handler)]
 ```
 
-Every example under `compiler:sdk/v0.14.0-rc.1:examples/**` opens with exactly these two lines —
-`compiler:sdk/v0.14.0-rc.1:examples/counter-contract/src/lib.rs` is the shortest reference.
+Both lines appear before any code in the SDK examples — see
+`compiler:sdk/v0.14.0-rc.1:examples/counter-contract/src/lib.rs`,
+`compiler:sdk/v0.14.0-rc.1:examples/basic-wallet/src/lib.rs` and
+`compiler:sdk/v0.14.0-rc.1:examples/p2id-note/src/lib.rs`. Most of them lead with an explanatory
+`// Do not link against libstd ...` comment first, so match the two attributes, not the first line.
 
 **For heap allocation (Vec, String, Box):**
 ```rust
@@ -564,6 +646,12 @@ faucet_id_prefix]`. The actual SMT key is `AssetId::hash() -> AssetIdHash`.
 faucet — not the asset id itself. Treating `AssetId` as the per-faucet class compiles and is
 silently wrong. The vault-key accessors are `Asset::id()` and `Asset::to_id_word()`, and the client
 re-exports `AssetId` (not `AssetClass`) from `miden_client::asset`.
+
+There is **no `AssetVaultKey` type** in either the protocol or the client — searching for one is a
+dead end, and a type of that name in your code or in generated bindings is stale. The vault-key type
+is `AssetId`, declared at
+`protocol:v0.16.0-rc.6:crates/miden-protocol/src/asset/vault/asset_id.rs:42` and re-exported by the
+client at `miden-client:v0.16.0-rc.2:crates/rust-client/src/lib.rs:195`.
 
 On the guest side nothing renamed: `miden::Asset` still has a field literally named `key`, and that
 word is the asset-ID word (P7).
